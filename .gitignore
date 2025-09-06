@@ -1,0 +1,8 @@
+# Python / PyInstaller outputs
+build/
+dist/
+__pycache__/
+*.spec
+*.exe
+*.pyd
+*.dll
