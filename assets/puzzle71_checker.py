@@ -4,8 +4,8 @@ from multiprocessing import Process, Value, cpu_count, freeze_support
 
 # ================= CONFIG =================
 TARGET_ADDR   = "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU"
-BOT_TOKEN     = "7725656965:AAHjuA2eP36Qvm2yYM09CRpl6EKWNBdjXEE"
-CHAT_ID       = "1873324620"
+BOT_TOKEN     = "***"   #TG
+CHAT_ID       = "***"   #TG
 BASE_BATCH    = 50000   # ⚡ start higher for fewer Python loops
 TUNE_INTERVAL = 5       # seconds between auto-tune checks
 # ==========================================
