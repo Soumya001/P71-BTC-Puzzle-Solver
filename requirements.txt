@@ -1,5 +1,0 @@
-fastapi>=0.104.0
-uvicorn[standard]>=0.24.0
-aiosqlite>=0.19.0
-coincurve>=18.0.0
-requests>=2.31.0

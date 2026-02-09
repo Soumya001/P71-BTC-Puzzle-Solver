@@ -21,15 +21,13 @@ jobs:
         run: pip install pyinstaller customtkinter
 
       - name: Build Windows EXE
-        run: |
-          cd worker
-          pyinstaller --onefile --name puzzle-worker --console --hidden-import=customtkinter --collect-data customtkinter puzzle_worker.py
+        run: pyinstaller --onefile --name puzzle-worker --console --hidden-import=customtkinter --collect-data customtkinter puzzle_worker.py
 
       - name: Upload Windows EXE
         uses: actions/upload-artifact@v4
         with:
           name: puzzle-worker-windows
-          path: worker/dist/puzzle-worker.exe
+          path: dist/puzzle-worker.exe
 
   build-linux:
     runs-on: ubuntu-latest
@@ -45,15 +43,13 @@ jobs:
         run: pip install pyinstaller customtkinter
 
       - name: Build Linux binary
-        run: |
-          cd worker
-          pyinstaller --onefile --name puzzle-worker-linux --strip --console --hidden-import=customtkinter --collect-data customtkinter puzzle_worker.py
+        run: pyinstaller --onefile --name puzzle-worker-linux --strip --console --hidden-import=customtkinter --collect-data customtkinter puzzle_worker.py
 
       - name: Upload Linux binary
         uses: actions/upload-artifact@v4
         with:
           name: puzzle-worker-linux
-          path: worker/dist/puzzle-worker-linux
+          path: dist/puzzle-worker-linux
 
   release:
     needs: [build-windows, build-linux]
@@ -79,17 +75,17 @@ jobs:
             puzzle-worker.exe
             puzzle-worker-linux
           body: |
-            ## Puzzle Pool Worker
+            ## Puzzle Pool Worker v2.0
 
             Download the executable for your platform:
-            - **Windows**: `puzzle-worker.exe` - Double-click to run
-            - **Linux**: `puzzle-worker-linux` - Run `chmod +x puzzle-worker-linux && ./puzzle-worker-linux`
+            - **Windows**: `puzzle-worker.exe` — Double-click to run
+            - **Linux**: `puzzle-worker-linux` — `chmod +x puzzle-worker-linux && ./puzzle-worker-linux`
 
             ### Requirements
             - NVIDIA GPU with CUDA drivers installed
             - [KeyHunt-Cuda](https://github.com/albertobsd/keyhunt) binary built/downloaded
 
             ### Quick Start
-            Run the executable - a modern GUI setup window will guide you through configuration.
+            Run the executable — a modern GUI will guide you through setup.
 
             Dashboard: https://starnetlive.space

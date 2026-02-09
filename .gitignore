@@ -2,7 +2,6 @@
 __pycache__/
 *.pyc
 *.pyo
-*.egg-info/
 venv/
 .venv/
 
@@ -11,19 +10,9 @@ build/
 dist/
 *.spec
 
-# Runtime data
-data/
-*.db
-pool_state.json
-FOUND_KEY.txt
-
-# IDE
-.vscode/
-.idea/
+# Worker config
+.puzzle-worker/
 
 # OS
 .DS_Store
 Thumbs.db
-
-# Config with secrets
-.puzzle-worker/
