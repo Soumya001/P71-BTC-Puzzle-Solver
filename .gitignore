@@ -1,8 +1,29 @@
-# Python / PyInstaller outputs
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+venv/
+.venv/
+
+# PyInstaller
 build/
 dist/
-__pycache__/
 *.spec
-*.exe
-*.pyd
-*.dll
+
+# Runtime data
+data/
+*.db
+pool_state.json
+FOUND_KEY.txt
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config with secrets
+.puzzle-worker/

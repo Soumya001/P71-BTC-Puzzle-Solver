@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bitcoin Puzzle Pool - starnetlive.space</title>
+<style>
+:root {
+  --bg: #060a10;
+  --bg2: #0c1220;
+  --card: #111827;
+  --card2: #1a2332;
+  --border: #1e293b;
+  --border2: #2d3d52;
+  --text: #e2e8f0;
+  --dim: #64748b;
+  --dim2: #94a3b8;
+  --accent: #f7931a;
+  --accent2: #fbbf24;
+  --green: #22c55e;
+  --green2: #4ade80;
+  --red: #ef4444;
+  --blue: #3b82f6;
+  --blue2: #60a5fa;
+  --purple: #a855f7;
+  --cyan: #06b6d4;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  min-height: 100vh;
+}
+code, .mono {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+}
+
+/* Header */
+.hero {
+  background: linear-gradient(135deg, #0c1220 0%, #1a1040 50%, #0c1220 100%);
+  border-bottom: 1px solid var(--border);
+  padding: 40px 20px 30px;
+  text-align: center;
+}
+.hero-inner { max-width: 900px; margin: 0 auto; }
+.logo {
+  font-size: 2.4rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: 3px;
+}
+.hero-sub {
+  color: var(--dim2);
+  margin-top: 8px;
+  font-size: 0.95rem;
+}
+.hero-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 6px 16px;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 20px;
+  font-size: 0.82rem;
+  color: var(--green);
+}
+.hero-status.offline {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: var(--red);
+}
+.live-dot {
+  width: 8px; height: 8px;
+  background: var(--green);
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+.hero-status.offline .live-dot { background: var(--red); animation: none; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* Nav */
+.nav {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px 20px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.nav-btn {
+  padding: 8px 20px;
+  border: none;
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+.nav-btn:hover { color: var(--text); background: var(--card); }
+.nav-btn.active { color: var(--accent); background: var(--card); }
+
+/* Main content */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+.page { display: none; }
+.page.active { display: block; }
+
+/* Cards */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  transition: border-color 0.2s;
+}
+.card:hover { border-color: var(--border2); }
+.card-wide { grid-column: 1 / -1; }
+.card-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--dim);
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.card-title .icon { font-size: 1rem; }
+.big-num {
+  font-size: 2.2rem;
+  font-weight: 800;
+  font-family: 'SF Mono', monospace;
+}
+.big-num.orange { color: var(--accent); }
+.big-num.green { color: var(--green); }
+.big-num.blue { color: var(--blue); }
+.big-num.purple { color: var(--purple); }
+.big-num.cyan { color: var(--cyan); }
+.big-sub {
+  font-size: 0.82rem;
+  color: var(--dim);
+  margin-top: 4px;
+}
+
+/* Stat rows */
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(30,41,59,0.5);
+  font-size: 0.85rem;
+}
+.stat-row:last-child { border-bottom: none; }
+.stat-label { color: var(--dim); }
+.stat-value { color: var(--text); font-weight: 600; font-family: 'SF Mono', monospace; }
+.stat-value.green { color: var(--green); }
+.stat-value.red { color: var(--red); }
+.stat-value.orange { color: var(--accent); }
+.stat-value.blue { color: var(--blue); }
+
+/* Progress bar */
+.progress-section { margin-top: 16px; }
+.progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  margin-bottom: 8px;
+}
+.progress-bar-bg {
+  width: 100%;
+  height: 28px;
+  background: var(--bg);
+  border-radius: 14px;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid var(--border);
+}
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), #f59e0b, var(--accent2));
+  border-radius: 14px;
+  transition: width 1s ease;
+  min-width: 2px;
+  position: relative;
+}
+.progress-bar-fill::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.1) 50%, transparent 100%);
+  animation: shimmer 2s infinite;
+}
+@keyframes shimmer { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
+
+/* Target address box */
+.addr-box {
+  font-family: 'SF Mono', monospace;
+  font-size: 0.85rem;
+  word-break: break-all;
+  background: var(--bg);
+  padding: 14px 16px;
+  border-radius: 10px;
+  color: var(--accent);
+  border: 1px solid var(--border);
+  margin-top: 8px;
+  position: relative;
+}
+.addr-box .copy-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--card2);
+  border: 1px solid var(--border);
+  color: var(--dim);
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.72rem;
+}
+.addr-box .copy-btn:hover { color: var(--text); }
+
+/* Keyspace visual */
+.keyspace-bar {
+  display: flex;
+  height: 40px;
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 12px 0;
+  border: 1px solid var(--border);
+}
+.ks-scanned {
+  background: linear-gradient(135deg, var(--green), #16a34a);
+  transition: width 1s;
+}
+.ks-assigned {
+  background: linear-gradient(135deg, var(--blue), #2563eb);
+  transition: width 1s;
+}
+.ks-remaining {
+  background: var(--bg);
+  flex: 1;
+}
+.ks-legend {
+  display: flex;
+  gap: 20px;
+  margin-top: 8px;
+  font-size: 0.78rem;
+  color: var(--dim);
+}
+.ks-legend span::before {
+  content: '';
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 3px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.ks-legend .l-scanned::before { background: var(--green); }
+.ks-legend .l-assigned::before { background: var(--blue); }
+.ks-legend .l-remaining::before { background: var(--bg); border: 1px solid var(--border); }
+
+/* Leaderboard */
+.lb-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.lb-table th {
+  text-align: left;
+  padding: 10px 8px;
+  color: var(--dim);
+  font-weight: 500;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-bottom: 1px solid var(--border);
+}
+.lb-table td { padding: 12px 8px; border-bottom: 1px solid rgba(30,41,59,0.4); }
+.lb-table tbody tr:hover { background: rgba(255,255,255,0.02); }
+.lb-rank { color: var(--accent); font-weight: 700; font-size: 1rem; }
+.lb-rank.top1 { color: #fbbf24; }
+.lb-rank.top2 { color: #94a3b8; }
+.lb-rank.top3 { color: #cd7f32; }
+.lb-name { color: var(--blue2); font-weight: 600; }
+.lb-bar-bg { width: 100%; height: 6px; background: var(--bg); border-radius: 3px; margin-top: 4px; }
+.lb-bar-fill { height: 100%; background: var(--blue); border-radius: 3px; }
+
+/* Join page */
+.step-list { counter-reset: steps; list-style: none; }
+.step-item {
+  counter-increment: steps;
+  padding: 20px;
+  margin-bottom: 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  position: relative;
+  padding-left: 70px;
+}
+.step-item::before {
+  content: counter(steps);
+  position: absolute;
+  left: 20px;
+  top: 20px;
+  width: 36px; height: 36px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #000;
+  font-weight: 800;
+  font-size: 1.1rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.step-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.step-desc { color: var(--dim2); font-size: 0.9rem; line-height: 1.6; }
+.code-block {
+  background: #000;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin: 12px 0;
+  font-family: 'SF Mono', monospace;
+  font-size: 0.82rem;
+  color: var(--green2);
+  overflow-x: auto;
+  position: relative;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.code-block .cmd-copy {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  color: var(--dim);
+  padding: 3px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-family: -apple-system, sans-serif;
+}
+.code-block .cmd-copy:hover { color: var(--text); }
+.code-comment { color: var(--dim); }
+
+/* Requirements badges */
+.req-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+.req-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.req-icon { font-size: 1.5rem; }
+.req-text { font-size: 0.85rem; }
+.req-text strong { display: block; color: var(--text); }
+.req-text span { color: var(--dim); font-size: 0.78rem; }
+
+/* Download buttons */
+.dl-grid {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 16px 0;
+}
+.dl-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, var(--accent), #d97706);
+  color: #000;
+  text-decoration: none;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  transition: transform 0.1s;
+}
+.dl-btn:hover { transform: scale(1.03); }
+.dl-btn.secondary {
+  background: var(--card2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+/* FAQ */
+.faq-item {
+  padding: 16px 20px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 10px;
+}
+.faq-q { font-weight: 700; margin-bottom: 8px; color: var(--accent2); }
+.faq-a { color: var(--dim2); font-size: 0.9rem; line-height: 1.6; }
+
+/* Found alert */
+.found-alert {
+  display: none;
+  background: linear-gradient(135deg, #052e16, #14532d);
+  border: 2px solid var(--green);
+  border-radius: 14px;
+  padding: 24px;
+  text-align: center;
+  margin-bottom: 20px;
+  animation: glow 2s infinite;
+}
+.found-alert.show { display: block; }
+@keyframes glow { 0%,100%{box-shadow:0 0 20px rgba(34,197,94,0.2)} 50%{box-shadow:0 0 50px rgba(34,197,94,0.5)} }
+.found-alert h2 { color: var(--green); font-size: 1.6rem; margin-bottom: 8px; }
+
+.section-title {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-bottom: 16px;
+  color: var(--text);
+}
+.section-sub {
+  color: var(--dim);
+  margin-bottom: 20px;
+  font-size: 0.9rem;
+}
+.divider { height: 1px; background: var(--border); margin: 30px 0; }
+
+.footer {
+  text-align: center;
+  padding: 30px 20px;
+  color: var(--dim);
+  font-size: 0.75rem;
+  border-top: 1px solid var(--border);
+  margin-top: 40px;
+}
+.footer a { color: var(--blue); text-decoration: none; }
+.update-info {
+  text-align: center;
+  color: var(--dim);
+  font-size: 0.72rem;
+  margin-top: 12px;
+}
+</style>
+</head>
+<body>
+
+<!-- Hero -->
+<div class="hero">
+  <div class="hero-inner">
+    <div class="logo">&#x20bf; PUZZLE POOL</div>
+    <div class="hero-sub">Collaborative Bitcoin Puzzle Key Search &mdash; starnetlive.space</div>
+    <div class="hero-status" id="heroStatus">
+      <div class="live-dot" id="liveDot"></div>
+      <span id="statusText">Connecting...</span>
+    </div>
+  </div>
+</div>
+
+<!-- Nav -->
+<div class="nav">
+  <button class="nav-btn active" onclick="showPage('dashboard')">Dashboard</button>
+  <button class="nav-btn" onclick="showPage('join')">Join Pool</button>
+  <button class="nav-btn" onclick="showPage('faq')">FAQ</button>
+</div>
+
+<!-- ===================== DASHBOARD PAGE ===================== -->
+<div class="container">
+<div class="page active" id="page-dashboard">
+
+  <div class="found-alert" id="foundAlert">
+    <h2>KEY FOUND!</h2>
+    <p id="foundMsg" style="color:var(--green2);font-size:1.1rem;margin-top:8px"></p>
+  </div>
+
+  <!-- Row 1: Big numbers -->
+  <div class="grid" style="grid-template-columns: repeat(4, 1fr);">
+    <div class="card">
+      <div class="card-title"><span class="icon">&#x1f9e9;</span> Puzzle</div>
+      <div class="big-num orange" id="puzzleNum">#--</div>
+      <div class="big-sub">Bitcoin Puzzle Challenge</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">&#x26a1;</span> Active Workers</div>
+      <div class="big-num green" id="activeWorkers">0</div>
+      <div class="big-sub">contributing right now</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">&#x1f680;</span> Pool Speed</div>
+      <div class="big-num cyan" id="poolSpeed">0</div>
+      <div class="big-sub" id="speedUnit">keys/sec</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">&#x23f3;</span> ETA</div>
+      <div class="big-num purple" id="eta">--</div>
+      <div class="big-sub">estimated remaining</div>
+    </div>
+  </div>
+
+  <!-- Row 2: Progress -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-title"><span class="icon">&#x1f4ca;</span> Search Progress</div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+      <div class="big-num orange" id="progressPct" style="font-size:1.8rem">0.00000000%</div>
+      <div style="color:var(--dim);font-size:0.82rem"><span id="chunksCompleted">0</span> / <span id="totalChunks">0</span> chunks</div>
+    </div>
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill" id="progressBar" style="width:0%"></div>
+    </div>
+    <div class="keyspace-bar" style="margin-top:16px">
+      <div class="ks-scanned" id="ksScanned" style="width:0%"></div>
+      <div class="ks-assigned" id="ksAssigned" style="width:0%"></div>
+      <div class="ks-remaining"></div>
+    </div>
+    <div class="ks-legend">
+      <span class="l-scanned">Verified complete</span>
+      <span class="l-assigned">Currently assigned</span>
+      <span class="l-remaining">Remaining</span>
+    </div>
+  </div>
+
+  <!-- Row 3: Details grid -->
+  <div class="grid" style="grid-template-columns: 1fr 1fr;">
+    <!-- Puzzle Details -->
+    <div class="card">
+      <div class="card-title"><span class="icon">&#x1f50d;</span> Puzzle Details</div>
+      <div class="stat-row">
+        <span class="stat-label">Target Address</span>
+      </div>
+      <div class="addr-box">
+        <span id="targetAddr">--</span>
+        <button class="copy-btn" onclick="copyText('targetAddr')">Copy</button>
+      </div>
+      <div class="stat-row" style="margin-top:12px">
+        <span class="stat-label">Key Range Start</span>
+        <span class="stat-value mono" id="rangeStart" style="font-size:0.78rem">--</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Key Range End</span>
+        <span class="stat-value mono" id="rangeEnd" style="font-size:0.78rem">--</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Total Keyspace</span>
+        <span class="stat-value orange" id="totalKeyspace">--</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Chunk Size</span>
+        <span class="stat-value" id="chunkSize">--</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Total Chunks</span>
+        <span class="stat-value" id="totalChunksDetail">--</span>
+      </div>
+    </div>
+
+    <!-- Pool Status -->
+    <div class="card">
+      <div class="card-title"><span class="icon">&#x2699;&#xfe0f;</span> Pool Status</div>
+      <div class="stat-row">
+        <span class="stat-label">Total Workers Registered</span>
+        <span class="stat-value" id="totalWorkers">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Active Workers (5m)</span>
+        <span class="stat-value green" id="activeWorkersDetail">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Active Assignments</span>
+        <span class="stat-value blue" id="activeAssignments">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Retry Queue</span>
+        <span class="stat-value" id="retryQueue">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Cursor Position</span>
+        <span class="stat-value mono" id="cursor" style="font-size:0.78rem">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Keys Scanned</span>
+        <span class="stat-value orange" id="keysScanned">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Keys Remaining</span>
+        <span class="stat-value" id="keysRemaining">--</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Server Uptime</span>
+        <span class="stat-value" id="uptime">--</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Keys Found</span>
+        <span class="stat-value" id="keysFound" style="font-size:1.1rem">0</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 4: Leaderboard -->
+  <div class="card" style="margin-top:4px">
+    <div class="card-title"><span class="icon">&#x1f3c6;</span> Worker Leaderboard</div>
+    <table class="lb-table">
+      <thead>
+        <tr>
+          <th style="width:50px">Rank</th>
+          <th>Worker</th>
+          <th>Chunks Done</th>
+          <th>Keys Scanned</th>
+          <th>Contribution</th>
+          <th>Canary Fails</th>
+        </tr>
+      </thead>
+      <tbody id="leaderboard">
+        <tr><td colspan="6" style="text-align:center;color:var(--dim);padding:30px">
+          No workers yet &mdash; be the first to join!
+        </td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="update-info">Auto-refreshes every 5 seconds &middot; Last update: <span id="lastUpdate">--</span></div>
+</div>
+
+<!-- ===================== JOIN PAGE ===================== -->
+<div class="page" id="page-join">
+
+  <div class="section-title">Join the Puzzle Pool</div>
+  <div class="section-sub">Contribute your GPU or CPU power to help solve Bitcoin Puzzle #71. Every worker scans a unique portion of the keyspace &mdash; no duplicate work, no wasted compute.</div>
+
+  <!-- Requirements -->
+  <div style="margin-bottom:30px">
+    <h3 style="font-size:1rem;margin-bottom:12px;color:var(--accent2)">System Requirements</h3>
+    <div class="req-grid">
+      <div class="req-badge">
+        <div class="req-icon">&#x1f5a5;</div>
+        <div class="req-text">
+          <strong>Operating System</strong>
+          <span>Linux (Ubuntu 20.04+) or Windows with WSL2</span>
+        </div>
+      </div>
+      <div class="req-badge">
+        <div class="req-icon">&#x1f40d;</div>
+        <div class="req-text">
+          <strong>Python 3.10+</strong>
+          <span>With pip and requests library</span>
+        </div>
+      </div>
+      <div class="req-badge">
+        <div class="req-icon">&#x1f3ae;</div>
+        <div class="req-text">
+          <strong>NVIDIA GPU (Recommended)</strong>
+          <span>CUDA 11.0+ &middot; ~1.1 GKey/s per GPU</span>
+        </div>
+      </div>
+      <div class="req-badge">
+        <div class="req-icon">&#x2699;&#xfe0f;</div>
+        <div class="req-text">
+          <strong>KeyHunt-Cuda</strong>
+          <span>Pre-built or compile from source</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Steps -->
+  <h3 style="font-size:1rem;margin-bottom:16px;color:var(--accent2)">Setup Guide</h3>
+  <ol class="step-list">
+    <li class="step-item">
+      <div class="step-title">Install NVIDIA Drivers & CUDA</div>
+      <div class="step-desc">
+        Make sure your NVIDIA GPU drivers and CUDA toolkit are installed. Verify with:
+        <div class="code-block"><span class="code-comment"># Check GPU is detected</span>
+nvidia-smi
+
+<span class="code-comment"># Check CUDA version</span>
+nvcc --version<button class="cmd-copy" onclick="copyCode(this)">Copy</button></div>
+        If you don't have CUDA, install it:
+        <div class="code-block"><span class="code-comment"># Ubuntu/Debian</span>
+sudo apt update
+sudo apt install -y nvidia-cuda-toolkit<button class="cmd-copy" onclick="copyCode(this)">Copy</button></div>
+      </div>
+    </li>
+
+    <li class="step-item">
+      <div class="step-title">Build KeyHunt-Cuda</div>
+      <div class="step-desc">
+        KeyHunt-Cuda is the GPU-accelerated key scanner. Build it from source:
+        <div class="code-block"><span class="code-comment"># Install build dependencies</span>
+sudo apt install -y git build-essential libgmp-dev
+
+<span class="code-comment"># Clone and build</span>
+git clone https://github.com/albertobsd/keyhunt.git
+cd keyhunt
+make gpu=1
+
+<span class="code-comment"># Verify it works</span>
+./KeyHunt --help<button class="cmd-copy" onclick="copyCode(this)">Copy</button></div>
+        Note the path to your <code>KeyHunt</code> binary (e.g., <code>/home/user/keyhunt/KeyHunt</code>).
+      </div>
+    </li>
+
+    <li class="step-item">
+      <div class="step-title">Download the Worker Client</div>
+      <div class="step-desc">
+        <strong>Option A: Standalone executable (no Python needed)</strong>
+        <div class="dl-grid" style="margin:12px 0">
+          <a href="/download/puzzle-worker-linux" class="dl-btn">Linux Binary (7.6 MB)</a>
+          <a href="https://github.com/user/btc-puzzle-pool/releases" class="dl-btn secondary">Windows EXE (GitHub)</a>
+        </div>
+        <div class="code-block"><span class="code-comment"># Linux: download and make executable</span>
+curl -O https://starnetlive.space/download/puzzle-worker-linux
+chmod +x puzzle-worker-linux
+./puzzle-worker-linux<button class="cmd-copy" onclick="copyCode(this)">Copy</button></div>
+        <div style="margin:16px 0 8px;color:var(--dim2)"><strong>Option B: Python script (requires Python 3.10+)</strong></div>
+        <div class="code-block"><span class="code-comment"># Download single-file worker (zero dependencies)</span>
+curl -O https://starnetlive.space/download/puzzle-worker.py
+python3 puzzle-worker.py<button class="cmd-copy" onclick="copyCode(this)">Copy</button></div>
+        <div class="dl-grid" style="margin-top:8px">
+          <a href="/download/puzzle-worker.py" class="dl-btn secondary">puzzle_worker.py (single file)</a>
+          <a href="/download/install.sh" class="dl-btn secondary">install.sh (setup helper)</a>
+        </div>
+      </div>
+    </li>
+
+    <li class="step-item">
+      <div class="step-title">Start the Worker</div>
+      <div class="step-desc">
+        Run the worker and point it to the pool. It will auto-register, get work, and start scanning:
+        <div class="code-block"><span class="code-comment"># Basic start (replace path to your KeyHunt binary)</span>
+python3 worker.py \
+  --pool-url https://starnetlive.space \
+  --name "your-worker-name" \
+  --keyhunt-path /home/user/keyhunt/KeyHunt<button class="cmd-copy" onclick="copyCode(this)">Copy</button></div>
+
+        For multiple GPUs, run one worker per GPU:
+        <div class="code-block"><span class="code-comment"># GPU 0</span>
+python3 worker.py --pool-url https://starnetlive.space --name "rig1-gpu0" --keyhunt-path ./KeyHunt --gpu-id 0
+
+<span class="code-comment"># GPU 1 (in another terminal)</span>
+python3 worker.py --pool-url https://starnetlive.space --name "rig1-gpu1" --keyhunt-path ./KeyHunt --gpu-id 1<button class="cmd-copy" onclick="copyCode(this)">Copy</button></div>
+
+        Run in background (survives terminal close):
+        <div class="code-block">nohup python3 worker.py \
+  --pool-url https://starnetlive.space \
+  --name "my-worker" \
+  --keyhunt-path ./KeyHunt \
+  > worker.log 2>&1 &
+
+<span class="code-comment"># Monitor logs</span>
+tail -f worker.log<button class="cmd-copy" onclick="copyCode(this)">Copy</button></div>
+      </div>
+    </li>
+
+    <li class="step-item">
+      <div class="step-title">Verify It's Working</div>
+      <div class="step-desc">
+        Once started, the worker will:
+        <ul style="margin:10px 0 0 20px;color:var(--dim2);line-height:1.8">
+          <li>Register with the pool and save an API key locally</li>
+          <li>Request batches of 4 chunks (~68 billion keys each)</li>
+          <li>Launch KeyHunt-Cuda to scan each chunk</li>
+          <li>Report results back with cryptographic proof of work</li>
+          <li>Automatically request more work and repeat</li>
+        </ul>
+        <div style="margin-top:12px">
+          Check the <a href="#" onclick="showPage('dashboard');return false" style="color:var(--blue)">Dashboard</a> &mdash; your worker should appear within a minute.
+        </div>
+      </div>
+    </li>
+  </ol>
+
+  <div class="divider"></div>
+
+  <!-- Quick start for experienced users -->
+  <div class="card">
+    <div class="card-title"><span class="icon">&#x26a1;</span> Quick Start (One-Liner)</div>
+    <div style="color:var(--dim2);font-size:0.9rem;margin-bottom:12px">For experienced users who already have KeyHunt-Cuda built:</div>
+    <div class="code-block">mkdir -p ~/puzzle-worker && cd ~/puzzle-worker && curl -O https://starnetlive.space/download/worker.py && curl -O https://starnetlive.space/download/runner.py && pip install requests && python3 worker.py --pool-url https://starnetlive.space --name "$(hostname)" --keyhunt-path /path/to/KeyHunt<button class="cmd-copy" onclick="copyCode(this)">Copy</button></div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- API info for developers -->
+  <div class="card">
+    <div class="card-title"><span class="icon">&#x1f4bb;</span> API Reference (Build Your Own Worker)</div>
+    <div style="color:var(--dim2);font-size:0.9rem;margin-bottom:16px">
+      Want to build a custom worker? The pool API is simple REST:
+    </div>
+    <table class="lb-table">
+      <thead><tr><th>Endpoint</th><th>Method</th><th>Auth</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td class="mono" style="color:var(--green2)">/api/register</td><td>POST</td><td>None</td><td>Register worker, get API key</td></tr>
+        <tr><td class="mono" style="color:var(--green2)">/api/work</td><td>GET</td><td>X-API-Key</td><td>Get batch of 4 chunks + canary addresses</td></tr>
+        <tr><td class="mono" style="color:var(--green2)">/api/work</td><td>POST</td><td>X-API-Key</td><td>Report completed chunks + canary proofs</td></tr>
+        <tr><td class="mono" style="color:var(--green2)">/api/found</td><td>POST</td><td>X-API-Key</td><td>Report found puzzle key</td></tr>
+        <tr><td class="mono" style="color:var(--green2)">/api/heartbeat</td><td>POST</td><td>X-API-Key</td><td>Signal liveness</td></tr>
+        <tr><td class="mono" style="color:var(--green2)">/api/stats</td><td>GET</td><td>None</td><td>Pool statistics (public)</td></tr>
+      </tbody>
+    </table>
+    <div style="margin-top:12px;color:var(--dim);font-size:0.82rem">
+      Full interactive docs: <a href="/docs" style="color:var(--blue)" target="_blank">/docs</a> (Swagger UI)
+    </div>
+  </div>
+</div>
+
+<!-- ===================== FAQ PAGE ===================== -->
+<div class="page" id="page-faq">
+  <div class="section-title">Frequently Asked Questions</div>
+
+  <div class="faq-item">
+    <div class="faq-q">What is the Bitcoin Puzzle?</div>
+    <div class="faq-a">The Bitcoin Puzzle (aka Bitcoin Challenge) is a series of Bitcoin addresses with known private key ranges. Someone sent BTC to these addresses as a challenge. Puzzle #71 has a private key between 2<sup>70</sup> and 2<sup>71</sup>, and the address <code>1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU</code> holds the funds.</div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">How does the pool work?</div>
+    <div class="faq-a">The pool splits the entire keyspace (2<sup>70</sup> keys) into chunks of 2<sup>36</sup> keys each (~68 billion keys per chunk). When your worker connects, the server assigns unique chunks that no one else is scanning. Your worker runs KeyHunt-Cuda on those chunks, then reports back. A 2 GB bitmap on the server tracks every chunk &mdash; zero duplicate work, zero gaps.</div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">How long does one chunk take?</div>
+    <div class="faq-a">At ~1.1 GKey/s (typical for a modern NVIDIA GPU like RTX 3060+), one chunk of 2<sup>36</sup> keys takes about 62 seconds. Workers receive 4 chunks at a time, so one batch takes ~4 minutes.</div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">What are canary keys?</div>
+    <div class="faq-a">For each chunk, the server generates 5 random "canary" private keys within that range and gives the worker their Bitcoin addresses. The worker must find these canary keys while scanning &mdash; this proves the worker actually scanned the full range and didn't skip it. Workers that fail canary checks get flagged and eventually banned.</div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">Can I use CPU instead of GPU?</div>
+    <div class="faq-a">KeyHunt-Cuda primarily targets NVIDIA GPUs. CPU scanning is possible but dramatically slower (~1-5 MKey/s vs 1,100+ MKey/s on GPU). A CPU worker would take ~19 hours per chunk vs ~62 seconds on GPU. You can still contribute with CPU, but GPU is strongly recommended.</div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">What GPU do I need?</div>
+    <div class="faq-a">Any NVIDIA GPU with CUDA support works. Performance scales with compute capability:
+      <ul style="margin:8px 0 0 20px;line-height:1.8">
+        <li>RTX 4090: ~2.0 GKey/s</li>
+        <li>RTX 3080: ~1.3 GKey/s</li>
+        <li>RTX 3060: ~0.8 GKey/s</li>
+        <li>GTX 1080 Ti: ~0.6 GKey/s</li>
+        <li>GTX 1060: ~0.3 GKey/s</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">Does my worker need to stay online 24/7?</div>
+    <div class="faq-a">No. Workers can connect and disconnect freely. If a worker goes offline, its assigned chunks expire after 5 minutes and get reassigned to another worker. No work is lost. Connect when you can.</div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">How realistic is solving Puzzle #71?</div>
+    <div class="faq-a">The keyspace is 2<sup>70</sup> (about 1.18 sextillion keys). With 10 workers at 1.1 GKey/s each, a full scan would take ~3,400 years. With 1,000 workers it's ~34 years. However, the key could be found at any time since we're scanning sequentially &mdash; it could be in the first 1% or the last 1%. This is a long-term collaborative effort.</div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">What happens when the key is found?</div>
+    <div class="faq-a">The worker reports the key to the server, which cryptographically verifies it matches the target address. The key is recorded and the finder's worker name is displayed. The pool does not automatically sweep the funds &mdash; that decision is made by the pool operator in consultation with the finder.</div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">Is this safe? Will it damage my GPU?</div>
+    <div class="faq-a">KeyHunt-Cuda uses normal GPU compute workloads similar to mining or AI training. It won't damage your hardware, though your GPU will run at full utilization while scanning. Monitor temperatures and ensure adequate cooling. You can stop the worker at any time.</div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">Can I run multiple GPUs?</div>
+    <div class="faq-a">Yes! Run one worker instance per GPU using the <code>--gpu-id</code> flag. Each worker registers separately and gets independent work assignments. See the Join page for multi-GPU examples.</div>
+  </div>
+</div>
+
+<!-- Footer -->
+<div class="footer">
+  Bitcoin Puzzle Pool &middot; <a href="https://starnetlive.space">starnetlive.space</a> &middot; Built for the community
+</div>
+
+</div><!-- /container -->
+
+<script>
+function fmt(n) {
+  if (n === undefined || n === null) return '0';
+  if (n >= 1e18) return (n / 1e18).toFixed(2) + ' Exa';
+  if (n >= 1e15) return (n / 1e15).toFixed(2) + ' Peta';
+  if (n >= 1e12) return (n / 1e12).toFixed(2) + ' T';
+  if (n >= 1e9) return (n / 1e9).toFixed(2) + ' B';
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + ' M';
+  if (n >= 1e3) return n.toLocaleString();
+  return String(n);
+}
+
+function fmtSpeed(kps) {
+  if (kps >= 1e12) return (kps / 1e12).toFixed(2);
+  if (kps >= 1e9) return (kps / 1e9).toFixed(2);
+  if (kps >= 1e6) return (kps / 1e6).toFixed(2);
+  if (kps >= 1e3) return (kps / 1e3).toFixed(2);
+  return String(kps);
+}
+function fmtSpeedUnit(kps) {
+  if (kps >= 1e12) return 'TKey/s';
+  if (kps >= 1e9) return 'GKey/s';
+  if (kps >= 1e6) return 'MKey/s';
+  if (kps >= 1e3) return 'KKey/s';
+  return 'Key/s';
+}
+
+function fmtDuration(sec) {
+  if (!sec || sec <= 0 || !isFinite(sec)) return '--';
+  const y = Math.floor(sec / (365.25 * 86400));
+  const d = Math.floor((sec % (365.25 * 86400)) / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (y > 0) return y + 'y ' + d + 'd';
+  if (d > 0) return d + 'd ' + h + 'h';
+  if (h > 0) return h + 'h ' + m + 'm';
+  return m + 'm';
+}
+
+function fmtUptime(sec) {
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (d > 0) return d + 'd ' + h + 'h ' + m + 'm';
+  if (h > 0) return h + 'h ' + m + 'm';
+  return m + 'm ' + (sec % 60) + 's';
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  event.target.classList.add('active');
+}
+
+function copyText(id) {
+  const text = document.getElementById(id).textContent;
+  navigator.clipboard.writeText(text);
+}
+
+function copyCode(btn) {
+  const block = btn.parentElement;
+  const text = block.textContent.replace('Copy', '').trim();
+  navigator.clipboard.writeText(text);
+  btn.textContent = 'Copied!';
+  setTimeout(() => btn.textContent = 'Copy', 1500);
+}
+
+let maxChunks = 0;
+
+async function fetchStats() {
+  try {
+    const resp = await fetch('/api/stats');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const d = await resp.json();
+
+    // Status
+    document.getElementById('heroStatus').className = 'hero-status';
+    document.getElementById('liveDot').style.background = 'var(--green)';
+    document.getElementById('statusText').textContent = 'Pool Online';
+
+    // Big numbers
+    document.getElementById('puzzleNum').textContent = '#' + d.puzzle.number;
+    document.getElementById('activeWorkers').textContent = d.pool.active_workers;
+
+    const speed = d.pool.est_keys_per_sec || 0;
+    document.getElementById('poolSpeed').textContent = fmtSpeed(speed);
+    document.getElementById('speedUnit').textContent = fmtSpeedUnit(speed);
+
+    document.getElementById('eta').textContent = fmtDuration(d.pool.est_eta_seconds);
+
+    // Progress
+    const pct = d.progress.percentage;
+    document.getElementById('progressPct').textContent = pct.toFixed(8) + '%';
+    document.getElementById('progressBar').style.width = Math.max(pct, 0.01) + '%';
+    document.getElementById('chunksCompleted').textContent = fmt(d.progress.chunks_completed);
+    document.getElementById('totalChunks').textContent = fmt(d.progress.total_chunks);
+
+    // Keyspace bar
+    const scannedPct = pct;
+    const assignedPct = (d.pool.active_assignments / d.progress.total_chunks * 100) || 0;
+    document.getElementById('ksScanned').style.width = Math.max(scannedPct, 0.01) + '%';
+    document.getElementById('ksAssigned').style.width = assignedPct + '%';
+
+    // Puzzle details
+    document.getElementById('targetAddr').textContent = d.puzzle.target_address;
+    document.getElementById('rangeStart').textContent = d.puzzle.range_start;
+    document.getElementById('rangeEnd').textContent = d.puzzle.range_end;
+    document.getElementById('totalKeyspace').textContent = fmt(d.puzzle.total_keyspace);
+    document.getElementById('chunkSize').textContent = '2^' + d.puzzle.chunk_size_bits + ' (' + fmt(d.puzzle.chunk_size_keys) + ' keys)';
+    document.getElementById('totalChunksDetail').textContent = fmt(d.puzzle.total_chunks);
+
+    // Pool status
+    document.getElementById('totalWorkers').textContent = d.pool.total_workers;
+    document.getElementById('activeWorkersDetail').textContent = d.pool.active_workers;
+    document.getElementById('activeAssignments').textContent = d.pool.active_assignments;
+    document.getElementById('retryQueue').textContent = d.pool.retry_queue_size;
+    document.getElementById('cursor').textContent = fmt(d.pool.cursor);
+    document.getElementById('keysScanned').textContent = fmt(d.progress.total_keys_scanned);
+    document.getElementById('keysRemaining').textContent = fmt(d.progress.keys_remaining);
+    document.getElementById('uptime').textContent = fmtUptime(d.pool.uptime_seconds);
+
+    const kf = d.pool.keys_found;
+    const kfEl = document.getElementById('keysFound');
+    kfEl.textContent = kf;
+    kfEl.className = 'stat-value' + (kf > 0 ? ' green' : '');
+
+    // Found alert
+    if (kf > 0) {
+      document.getElementById('foundAlert').classList.add('show');
+      document.getElementById('foundMsg').textContent = kf + ' key(s) found! Check the server logs.';
+    }
+
+    // Leaderboard
+    const lb = document.getElementById('leaderboard');
+    if (d.leaderboard && d.leaderboard.length > 0) {
+      maxChunks = Math.max(maxChunks, d.leaderboard[0].chunks_completed || 1);
+      lb.innerHTML = d.leaderboard.map((w, i) => {
+        const pctW = ((w.chunks_completed / maxChunks) * 100).toFixed(1);
+        const rankClass = i === 0 ? 'top1' : i === 1 ? 'top2' : i === 2 ? 'top3' : '';
+        return `<tr>
+          <td><span class="lb-rank ${rankClass}">${i + 1}</span></td>
+          <td class="lb-name">${esc(w.name)}</td>
+          <td class="mono">${fmt(w.chunks_completed)}</td>
+          <td class="mono">${fmt(w.total_keys)}</td>
+          <td><div class="lb-bar-bg"><div class="lb-bar-fill" style="width:${pctW}%"></div></div></td>
+          <td style="color:${w.canary_fails > 0 ? 'var(--red)' : 'var(--dim)'}">${w.canary_fails}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+  } catch (e) {
+    document.getElementById('heroStatus').className = 'hero-status offline';
+    document.getElementById('statusText').textContent = 'Connection Error';
+  }
+}
+
+fetchStats();
+setInterval(fetchStats, 5000);
+</script>
+</body>
+</html>
