@@ -22,14 +22,16 @@ jobs:
 
       - name: Build Windows EXE
         run: >
-          pyinstaller --onefile --name puzzle-worker --windowed
+          pyinstaller --onefile --name puzzle-worker --console
           --icon=icon.ico
           --add-data "icon.ico;."
           --add-data "icon.png;."
           --hidden-import=customtkinter
           --hidden-import=pystray
           --hidden-import=PIL
-          --collect-data customtkinter
+          --hidden-import=PIL._tkinter_finder
+          --hidden-import=pystray._win32
+          --collect-all customtkinter
           puzzle_worker.py
 
       - name: Upload Windows EXE
@@ -59,7 +61,8 @@ jobs:
           --hidden-import=customtkinter
           --hidden-import=pystray
           --hidden-import=PIL
-          --collect-data customtkinter
+          --hidden-import=pystray._xorg
+          --collect-all customtkinter
           puzzle_worker.py
 
       - name: Upload Linux binary
