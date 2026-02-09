@@ -18,10 +18,19 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install pyinstaller customtkinter
+        run: pip install pyinstaller customtkinter pystray Pillow
 
       - name: Build Windows EXE
-        run: pyinstaller --onefile --name puzzle-worker --console --hidden-import=customtkinter --collect-data customtkinter puzzle_worker.py
+        run: >
+          pyinstaller --onefile --name puzzle-worker --windowed
+          --icon=icon.ico
+          --add-data "icon.ico;."
+          --add-data "icon.png;."
+          --hidden-import=customtkinter
+          --hidden-import=pystray
+          --hidden-import=PIL
+          --collect-data customtkinter
+          puzzle_worker.py
 
       - name: Upload Windows EXE
         uses: actions/upload-artifact@v4
@@ -40,10 +49,18 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install pyinstaller customtkinter
+        run: pip install pyinstaller customtkinter pystray Pillow
 
       - name: Build Linux binary
-        run: pyinstaller --onefile --name puzzle-worker-linux --strip --console --hidden-import=customtkinter --collect-data customtkinter puzzle_worker.py
+        run: >
+          pyinstaller --onefile --name puzzle-worker-linux --strip --console
+          --add-data "icon.ico:."
+          --add-data "icon.png:."
+          --hidden-import=customtkinter
+          --hidden-import=pystray
+          --hidden-import=PIL
+          --collect-data customtkinter
+          puzzle_worker.py
 
       - name: Upload Linux binary
         uses: actions/upload-artifact@v4
@@ -75,17 +92,25 @@ jobs:
             puzzle-worker.exe
             puzzle-worker-linux
           body: |
-            ## Puzzle Pool Worker v2.0
+            ## Puzzle Pool Worker v3.0
 
-            Download the executable for your platform:
+            Download for your platform — just run it, everything is automatic:
             - **Windows**: `puzzle-worker.exe` — Double-click to run
             - **Linux**: `puzzle-worker-linux` — `chmod +x puzzle-worker-linux && ./puzzle-worker-linux`
 
+            ### What happens
+            1. Creates `C:\PuzzlePool` folder (Windows) or `~/.puzzle-pool` (Linux)
+            2. Auto-downloads the scanning engine (one time)
+            3. Creates a desktop shortcut
+            4. Connects to the pool and starts mining
+
             ### Requirements
             - NVIDIA GPU with CUDA drivers installed
-            - [KeyHunt-Cuda](https://github.com/albertobsd/keyhunt) binary built/downloaded
 
-            ### Quick Start
-            Run the executable — a modern GUI will guide you through setup.
+            ### Features
+            - Modern dark GUI with live stats
+            - System tray — close window to keep mining in background
+            - Auto-reconnect on connection loss
+            - Zero configuration needed
 
             Dashboard: https://starnetlive.space

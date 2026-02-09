@@ -1,87 +1,56 @@
 # Bitcoin Puzzle #71 — Pool Worker
 
-Join the hunt for Bitcoin Puzzle #71. Download the worker, point it at your GPU, and start scanning with the pool. Zero duplicate work, live stats, modern GUI.
+Join the hunt for Bitcoin Puzzle #71. Download, run, mine. That's it.
 
 **Dashboard:** [starnetlive.space](https://starnetlive.space)
 
 ## Download
 
-Grab the latest binary from [**Releases**](https://github.com/Soumya001/P71-BTC-Puzzle-Solver/releases):
+Get the latest from [**Releases**](https://github.com/Soumya001/P71-BTC-Puzzle-Solver/releases):
 
-| Platform | File | How to Run |
-|----------|------|------------|
+| Platform | File | Run |
+|----------|------|-----|
 | Windows  | `puzzle-worker.exe` | Double-click |
 | Linux    | `puzzle-worker-linux` | `chmod +x puzzle-worker-linux && ./puzzle-worker-linux` |
+
+## What Happens
+
+1. Run the EXE
+2. It auto-creates `C:\PuzzlePool` folder (Windows) or `~/.puzzle-pool` (Linux)
+3. Downloads the scanning engine automatically (first run only)
+4. Creates a desktop shortcut with icon
+5. Connects to the pool and starts scanning
+6. Close the window — it keeps mining in the system tray
+
+**No setup. No configuration. No terminal commands.**
 
 ## Requirements
 
 - **NVIDIA GPU** with CUDA drivers installed
-- **[KeyHunt-Cuda](https://github.com/albertobsd/keyhunt)** — the scanning engine
+- Internet connection (must stay connected to the pool)
 
-### Installing KeyHunt-Cuda
+## Features
 
-**Linux:**
-```bash
-git clone https://github.com/albertobsd/keyhunt.git
-cd keyhunt
-make gpu=1
-```
-
-**Windows:** Download a pre-built release from the KeyHunt-Cuda repo or build with Visual Studio.
-
-## Quick Start
-
-1. Download `puzzle-worker.exe` (Windows) or `puzzle-worker-linux` (Linux)
-2. Run it — a setup window will ask for:
-   - **Pool URL** — leave default (`https://starnetlive.space`)
-   - **Worker Name** — pick any name
-   - **KeyHunt Path** — point to your KeyHunt-Cuda binary
-   - **GPU ID** — usually `0`
-3. Click **START MINING**
-4. Watch your GPU scan billions of keys per second
-
-## What You'll See
-
-The worker GUI shows:
-- **Current scan** — chunk ID, key range, progress bar
-- **Canary verification** — anti-cheat proof-of-work indicators
-- **Your stats** — chunks completed, keys scanned, speed, uptime
-- **System stats** — GPU usage/temp/power, VRAM, CPU, RAM
-- **Pool stats** — active workers, total pool speed, ETA, overall progress
-
-## Command Line Options
-
-```
-puzzle-worker --no-gui          # Plain text mode (no window)
-puzzle-worker --auto            # Use saved config, skip setup
-puzzle-worker --pool-url URL    # Custom pool URL
-puzzle-worker --name MyWorker   # Set worker name
-puzzle-worker --keyhunt-path /path/to/KeyHunt
-puzzle-worker --gpu-id 1        # Use second GPU
-```
+- Modern dark-themed GUI with live stats
+- System tray — mining continues in background when you close the window
+- Auto-reconnect on connection loss
+- Shows your speed, GPU temp, chunks completed, pool progress
+- Desktop shortcut with icon created automatically
 
 ## How It Works
 
-- The pool server splits Puzzle #71's keyspace (2^70 keys) into chunks of 2^36 keys
-- Your worker gets a batch of 4 chunks at a time
-- KeyHunt-Cuda scans each chunk using your GPU
-- Results are reported back with canary proofs (anti-cheat)
-- No key is ever stored on your machine — only the server holds found keys
-- If the key is found, rewards are distributed to contributors
+The pool server splits Puzzle #71's keyspace (2^70 keys) into chunks. Your GPU scans chunks assigned by the pool. Results are verified via canary keys (anti-cheat). Progress is tracked on the [dashboard](https://starnetlive.space).
 
-## Run from Source (Alternative)
-
-```bash
-pip install customtkinter
-python puzzle_worker.py
-```
+No private keys are ever stored on your machine.
 
 ## FAQ
 
-**Is this safe?** The worker only runs KeyHunt-Cuda (open source) on your GPU and reports results to the pool. No keys are stored locally.
+**Is this safe?** Yes. The worker runs KeyHunt-Cuda (open source GPU scanner) and reports results to the pool. Nothing else.
 
-**What GPU do I need?** Any NVIDIA GPU with CUDA support. GTX 1060+ recommended.
+**What GPU do I need?** Any NVIDIA GPU with CUDA. GTX 1060+ recommended.
 
-**Can I run multiple GPUs?** Run one worker instance per GPU with different `--gpu-id` values.
+**Multiple GPUs?** Run one instance per GPU — they auto-register as separate workers.
 
-**What happens if the key is found?** The pool server securely stores the key. Rewards are distributed to contributing workers.
+**What if the key is found?** The pool securely stores the key. Rewards distributed to contributors.
+
+**Can I see the source code?** Yes — `puzzle_worker.py` in this repo is the full source.
