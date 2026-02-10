@@ -28,7 +28,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-VERSION = "3.0.4"
+VERSION = "3.0.5"
 POOL_URL = "https://starnetlive.space"
 APP_NAME = "PuzzlePool"
 
@@ -378,6 +378,26 @@ _RE_KEY = re.compile(r"Priv\s*\(HEX\):\s*([0-9a-fA-F]+)")
 _RE_PROG = re.compile(r"\[.*?(\d+\.?\d*)%\]")
 _RE_BYE = re.compile(r"BYE")
 
+_B58 = b'123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+
+def _addr_to_rmd160(addr):
+    """Decode a Bitcoin P2PKH address to its 20-byte RIPEMD-160 hash."""
+    n = 0
+    for c in addr.encode():
+        n = n * 58 + _B58.index(c)
+    data = n.to_bytes(25, 'big')
+    return data[1:21]  # strip version byte and 4-byte checksum
+
+def _make_bin_file(addrs, path):
+    """Create sorted binary rmd160 file for KeyHunt ADDRESSES mode."""
+    hashes = []
+    for a in addrs:
+        hashes.append(_addr_to_rmd160(a))
+    hashes.sort()
+    with open(str(path), 'wb') as f:
+        for h in hashes:
+            f.write(h)
+
 
 class KeyHuntRunner:
     def __init__(self, path=None, gpu_id=0):
@@ -387,15 +407,24 @@ class KeyHuntRunner:
         self.pid = None
 
     def run(self, rs, re_, target, canaries, ui=None, timeout=600):
-        addrs = [target] + canaries
-        tmp = Path(tempfile.gettempdir()) / f"_pa_{os.getpid()}.txt"
-        tmp.write_text("\n".join(addrs) + "\n")
-
         s = rs.replace("0x", "").lstrip("0") or "0"
         e = re_.replace("0x", "").lstrip("0") or "0"
-        cmd = [self.path, "-m", "address", "-f", str(tmp),
-               "-r", f"{s}:{e}", "-t", "0", "-b", "0",
-               "-g", str(self.gpu_id), "-q"]
+
+        if len(canaries) > 0:
+            # Multi-address: write sorted binary rmd160 file
+            addrs = [target] + canaries
+            tmp = Path(tempfile.gettempdir()) / f"_pa_{os.getpid()}.bin"
+            _make_bin_file(addrs, tmp)
+            cmd = [self.path, "-m", "addresses", "-g",
+                   "--gpui", str(self.gpu_id),
+                   "-i", str(tmp),
+                   "--range", f"{s}:{e}"]
+        else:
+            # Single address mode
+            tmp = None
+            cmd = [self.path, "-m", "address", "-g",
+                   "--gpui", str(self.gpu_id),
+                   "--range", f"{s}:{e}", target]
 
         result = {"status": "complete", "found_key": None,
                   "canary_keys": {}, "progress": 0.0}
@@ -472,10 +501,11 @@ class KeyHuntRunner:
             self.pid = None
             if ui:
                 ui.keyhunt_pid = None
-            try:
-                tmp.unlink(missing_ok=True)
-            except Exception:
-                pass
+            if tmp:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except Exception:
+                    pass
         return result
 
     def kill(self):
