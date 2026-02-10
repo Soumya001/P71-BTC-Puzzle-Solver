@@ -28,7 +28,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-VERSION = "3.0.0"
+VERSION = "3.0.2"
 POOL_URL = "https://starnetlive.space"
 APP_NAME = "PuzzlePool"
 
@@ -248,9 +248,34 @@ class Installer:
                 pass
 
     @staticmethod
+    def _is_valid_binary():
+        """Check if existing KeyHunt binary is valid (not a corrupt/wrong-platform file)."""
+        if not KEYHUNT_PATH.exists():
+            return False
+        size = KEYHUNT_PATH.stat().st_size
+        if size < 500_000:  # valid binary is >10MB, reject tiny files
+            return False
+        # Check PE header on Windows, ELF on Linux
+        try:
+            with open(str(KEYHUNT_PATH), 'rb') as f:
+                magic = f.read(4)
+            if IS_WIN:
+                return magic[:2] == b'MZ'  # PE executable
+            else:
+                return magic == b'\x7fELF'  # ELF executable
+        except Exception:
+            return False
+
+    @staticmethod
     def download_keyhunt(progress_cb=None):
-        if KEYHUNT_PATH.exists():
+        if KEYHUNT_PATH.exists() and Installer._is_valid_binary():
             return True
+        # Remove invalid file if present
+        if KEYHUNT_PATH.exists():
+            try:
+                KEYHUNT_PATH.unlink()
+            except Exception:
+                pass
         try:
             ctx = ssl.create_default_context()
             req = urllib.request.Request(
