@@ -30,7 +30,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-VERSION = "4.1.2"
+VERSION = "4.1.4"
 POOL_URL = "https://starnetlive.space"
 APP_NAME = "PuzzlePool"
 
@@ -38,6 +38,13 @@ APP_NAME = "PuzzlePool"
 IS_WIN = platform.system() == "Windows"
 IS_FROZEN = getattr(sys, 'frozen', False)
 CREATE_NO_WINDOW = 0x08000000 if IS_WIN else 0
+
+# Guard against None stdout/stderr in --windowed frozen apps
+if IS_WIN and IS_FROZEN:
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, 'w')
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, 'w')
 
 if IS_WIN:
     INSTALL_DIR = Path("C:/PuzzlePool")
@@ -55,10 +62,16 @@ LOG_DIR = INSTALL_DIR / "logs"
 ICON_FILE = INSTALL_DIR / "icon.ico"
 ICON_PNG = INSTALL_DIR / "icon.png"
 
-# ─── Windows High-DPI ─────────────────────────────────────────────
+# ─── Windows setup ────────────────────────────────────────────────
 if IS_WIN:
     try:
         import ctypes
+        # Set AppUserModelID so Windows uses our icon on taskbar (not Python's)
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "PuzzlePool.Worker.v4")
+    except Exception:
+        pass
+    try:
         ctypes.windll.shcore.SetProcessDpiAwareness(2)
     except Exception:
         try:
@@ -448,8 +461,8 @@ class Installer:
 
 _RE_ADDR = re.compile(r"PubAddress:\s*(\S+)")
 _RE_KEY = re.compile(r"Priv\s*\(HEX\):\s*([0-9a-fA-F]+)")
-_RE_PROG = re.compile(r"\[.*?(\d+\.?\d*)%\]")
-_RE_SPEED = re.compile(r"\[(\d+\.?\d*)\s*([KMGTPE])[Kk]/s\]")
+_RE_PROG = re.compile(r"\[C:\s*(\d+\.?\d*)\s*%\]")
+_RE_SPEED = re.compile(r"\[(?:CPU\+GPU|GPU|CPU):\s*(\d+\.?\d*)\s*([KMGTPE])[Kk]/s\]")
 _RE_BYE = re.compile(r"BYE")
 
 
@@ -485,10 +498,11 @@ class KeyHuntRunner:
             ui.log(f"CMD: {' '.join(cmd)}", GREY)
 
         try:
+            # Use binary mode — KeyHunt progress lines use \r (not \n),
+            # so Python's text-mode line iterator would never see them.
             self.proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, bufsize=1, startupinfo=si,
-                creationflags=CREATE_NO_WINDOW)
+                startupinfo=si, creationflags=CREATE_NO_WINDOW)
             self.pid = self.proc.pid
             if ui:
                 ui.keyhunt_pid = self.pid
@@ -496,54 +510,79 @@ class KeyHuntRunner:
             t0 = time.time()
             cur_addr = None
             output_lines = []
-            for line in self.proc.stdout:
-                line = line.strip()
-                if not line:
-                    continue
-                output_lines.append(line)
+            line_buf = b""
+            found = False
 
-                m = _RE_ADDR.search(line)
-                if m:
-                    cur_addr = m.group(1)
+            # Read byte-by-byte: KeyHunt uses \r for progress, \n for
+            # found-key output and BYE.  This handles both delimiters.
+            while not found:
+                byte = self.proc.stdout.read(1)
+                if not byte:  # EOF
+                    if line_buf:
+                        line = line_buf.decode('utf-8', errors='replace').strip()
+                        line_buf = b""
+                        if line:
+                            output_lines.append(line)
+                            if _RE_BYE.search(line):
+                                result["status"] = "complete"
+                                result["progress"] = 100.0
+                                if ui:
+                                    ui.chunk_progress = 100.0
+                    break
 
-                m = _RE_KEY.search(line)
-                if m and cur_addr:
-                    pk = m.group(1)
-                    if cur_addr == target:
-                        result["found_key"] = {"address": cur_addr,
-                                               "privkey": pk}
-                        result["status"] = "found"
+                if byte in (b'\r', b'\n'):
+                    if not line_buf:
+                        continue
+                    line = line_buf.decode('utf-8', errors='replace').strip()
+                    line_buf = b""
+                    if not line:
+                        continue
+                    output_lines.append(line)
+
+                    m = _RE_ADDR.search(line)
+                    if m:
+                        cur_addr = m.group(1)
+
+                    m = _RE_KEY.search(line)
+                    if m and cur_addr:
+                        pk = m.group(1)
+                        if cur_addr == target:
+                            result["found_key"] = {"address": cur_addr,
+                                                   "privkey": pk}
+                            result["status"] = "found"
+                            self.kill()
+                            found = True
+                            break
+                        cur_addr = None
+
+                    m = _RE_PROG.search(line)
+                    if m:
+                        result["progress"] = float(m.group(1))
+                        if ui:
+                            ui.chunk_progress = result["progress"]
+
+                    m = _RE_SPEED.search(line)
+                    if m:
+                        val = float(m.group(1))
+                        unit = m.group(2)
+                        multipliers = {"K": 1e3, "M": 1e6, "G": 1e9,
+                                       "T": 1e12, "P": 1e15, "E": 1e18}
+                        result["speed"] = val * multipliers.get(unit, 1e6)
+                        if ui:
+                            ui.current_speed = result["speed"]
+
+                    if _RE_BYE.search(line):
+                        result["status"] = "complete"
+                        result["progress"] = 100.0
+                        if ui:
+                            ui.chunk_progress = 100.0
+
+                    if time.time() - t0 > timeout:
+                        result["status"] = "timeout"
                         self.kill()
                         break
-                    cur_addr = None
-
-                m = _RE_PROG.search(line)
-                if m:
-                    result["progress"] = float(m.group(1))
-                    if ui:
-                        ui.chunk_progress = result["progress"]
-
-                # Parse speed: [1234.56 MK/s]
-                m = _RE_SPEED.search(line)
-                if m:
-                    val = float(m.group(1))
-                    unit = m.group(2)
-                    multipliers = {"K": 1e3, "M": 1e6, "G": 1e9,
-                                   "T": 1e12, "P": 1e15, "E": 1e18}
-                    result["speed"] = val * multipliers.get(unit, 1e6)
-                    if ui:
-                        ui.current_speed = result["speed"]
-
-                if _RE_BYE.search(line):
-                    result["status"] = "complete"
-                    result["progress"] = 100.0
-                    if ui:
-                        ui.chunk_progress = 100.0
-
-                if time.time() - t0 > timeout:
-                    result["status"] = "timeout"
-                    self.kill()
-                    break
+                else:
+                    line_buf += byte
 
             if self.proc.poll() is None:
                 self.proc.wait(timeout=10)
@@ -685,12 +724,13 @@ class SettingsDialog:
     def __init__(self, parent, current_config, on_save):
         self._on_save = on_save
         self.win = ctk.CTkToplevel(parent)
+        self.win.withdraw()  # Hide until positioned
         self.win.title("Settings")
         self.win.geometry("420x480")
         self.win.transient(parent)
-        self.win.grab_set()
         self.win.resizable(False, False)
         self.win.configure(fg_color=CLR.BG)
+        self.win.protocol("WM_DELETE_WINDOW", self._close)
 
         # Title
         ctk.CTkLabel(self.win, text="Worker Settings", font=("", 18, "bold"),
@@ -747,7 +787,17 @@ class SettingsDialog:
         ctk.CTkButton(btn_frame, text="Cancel", width=100, height=36,
                       fg_color=CLR.VDIM, hover_color=CLR.DIM,
                       text_color=CLR.TEXT, font=("", 13),
-                      command=self.win.destroy).pack(side="right")
+                      command=self._close).pack(side="right")
+
+        # Center on parent and show
+        self.win.update_idletasks()
+        px = parent.winfo_rootx() + (parent.winfo_width() - 420) // 2
+        py = parent.winfo_rooty() + (parent.winfo_height() - 480) // 2
+        self.win.geometry(f"+{max(0,px)}+{max(0,py)}")
+        self.win.deiconify()
+        self.win.grab_set()
+        self.win.lift()
+        self.win.focus_force()
 
     def _add_field(self, parent, label, key, default, kind, options=None):
         row = ctk.CTkFrame(parent, fg_color="transparent")
@@ -773,6 +823,10 @@ class SettingsDialog:
             dd.pack(side="right")
             self._fields[key] = var
 
+    def _close(self):
+        self.win.grab_release()
+        self.win.destroy()
+
     def _save(self):
         device_rmap = {"GPU": "gpu", "CPU": "cpu", "CPU+GPU": "cpu_gpu"}
         mode_rmap = {"Normal": "normal", "Eco": "eco"}
@@ -790,7 +844,7 @@ class SettingsDialog:
         _save_config(new_cfg)
         if self._on_save:
             self._on_save(new_cfg)
-        self.win.destroy()
+        self._close()
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -854,9 +908,17 @@ class WorkerGUI:
         self.root.title(f"Puzzle Pool Worker v{VERSION}")
         self.root.geometry("800x850")
         self.root.minsize(740, 760)
+        # Try installed icon first, then bundled icon as fallback
+        icon_path = None
         if ICON_FILE.exists():
+            icon_path = str(ICON_FILE)
+        elif IS_FROZEN:
+            bundled = Path(sys._MEIPASS) / "icon.ico"
+            if bundled.exists():
+                icon_path = str(bundled)
+        if icon_path:
             try:
-                self.root.iconbitmap(str(ICON_FILE))
+                self.root.iconbitmap(icon_path)
             except Exception:
                 pass
 
@@ -1160,7 +1222,6 @@ class WorkerGUI:
     def _on_stop(self):
         if self._worker_ref:
             self._worker_ref._user_state = "stopped"
-            self._worker_ref.running = False
             self._worker_ref.runner.kill()
         self._update_ctrl_buttons("stopped")
         self.log("User: Stop", RED)
@@ -1550,7 +1611,6 @@ class PoolWorker:
                     return
                 time.sleep(0.5)
             # User pressed start — enter the work loop
-            self.running = True
             self._work_loop()
             # If we exited the work loop, go back to waiting
             if self._user_state == "stopped":
@@ -1570,14 +1630,16 @@ class PoolWorker:
             self.ui._update_ctrl_buttons("running")
 
         no_work = 0
-        while self.running and self._user_state == "running":
+        while self._user_state == "running":
             # Check pause state
             while self._user_state == "paused":
                 if self.ui:
                     self.ui.status = "PAUSED"
                     self.ui.status_color = YELLOW
                 time.sleep(1)
-            if self._user_state == "stopped" or not self.running:
+            if self._user_state == "stopped":
+                break
+            if self.ui and not self.ui.running:
                 break
 
             # Sync device/mode from live settings
@@ -1605,7 +1667,7 @@ class PoolWorker:
                     self.ui.status = "WAITING"
                     self.ui.status_color = YELLOW
                 for _ in range(wait):
-                    if self._user_state != "running" or not self.running:
+                    if self._user_state != "running":
                         return
                     time.sleep(1)
                 continue
@@ -1727,13 +1789,13 @@ class PoolWorker:
                 self.ui.heartbeat_ok = False
 
             # Eco mode cooldown
-            if self.mode == "eco" and self._user_state == "running" and self.running:
+            if self.mode == "eco" and self._user_state == "running":
                 self._log(f"Eco mode: cooling down {self.eco_cooldown}s...", CYAN)
                 if self.ui:
                     self.ui.status = "ECO COOLDOWN"
                     self.ui.status_color = CYAN
                 for i in range(self.eco_cooldown):
-                    if self._user_state != "running" or not self.running:
+                    if self._user_state != "running":
                         break
                     time.sleep(1)
 
@@ -1743,7 +1805,7 @@ class PoolWorker:
                     self.ui.status = "PAUSED"
                     self.ui.status_color = YELLOW
                 time.sleep(1)
-            if self._user_state == "stopped" or not self.running:
+            if self._user_state == "stopped":
                 break
 
 

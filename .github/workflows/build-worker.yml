@@ -28,9 +28,12 @@ jobs:
           --add-data "icon.png;."
           --hidden-import=customtkinter
           --hidden-import=pystray
+          --hidden-import=pystray._win32
           --hidden-import=PIL
           --hidden-import=PIL._tkinter_finder
-          --hidden-import=pystray._win32
+          --hidden-import=PIL.Image
+          --hidden-import=PIL.ImageDraw
+          --hidden-import=PIL.ImageFont
           --collect-all customtkinter
           puzzle_worker.py
 
@@ -60,8 +63,12 @@ jobs:
           --add-data "icon.png:."
           --hidden-import=customtkinter
           --hidden-import=pystray
-          --hidden-import=PIL
           --hidden-import=pystray._xorg
+          --hidden-import=PIL
+          --hidden-import=PIL._tkinter_finder
+          --hidden-import=PIL.Image
+          --hidden-import=PIL.ImageDraw
+          --hidden-import=PIL.ImageFont
           --collect-all customtkinter
           puzzle_worker.py
 
@@ -95,20 +102,28 @@ jobs:
             puzzle-worker.exe
             puzzle-worker-linux
           body: |
-            ## Puzzle Pool Worker v4.1
+            ## Puzzle Pool Worker v4.1.4
 
             Download for your platform — just run it, everything is automatic:
             - **Windows**: `puzzle-worker.exe` — Double-click to run
             - **Linux**: `puzzle-worker-linux` — `chmod +x puzzle-worker-linux && ./puzzle-worker-linux`
 
-            ### What's New in v4.1
-            - **Start / Pause / Stop controls** — full control over scanning
-            - **Scan modes** — Normal (continuous) or Eco (cooldown between chunks)
-            - **Device selection** — GPU, CPU, or CPU+GPU
-            - **Settings dialog** — configure worker name, GPU ID, threads, modes
-            - **No CMD popup** on Windows (CREATE_NO_WINDOW)
-            - **Puzzle-piece Bitcoin icon**
-            - **Controls bar** with mode/device dropdowns
+            ### What's New in v4.1.4
+            - **Real-time speed & progress** — fixed KeyHunt output parsing (\r-delimited progress lines now read correctly)
+            - **No CMD popup** on Windows (CREATE_NO_WINDOW + --windowed build)
+            - **Proper Windows taskbar icon** (AppUserModelID)
+            - **Settings dialog** improvements (centered on parent, proper modal behavior)
+            - **Crash-proof** — null stdout/stderr guard for frozen apps
+
+            ### Features
+            - Start / Pause / Stop controls
+            - Normal & Eco scan modes
+            - GPU / CPU / CPU+GPU device selection
+            - Settings panel for all configuration
+            - Modern dark GUI with live stats
+            - System tray — close window to keep mining in background
+            - Auto-reconnect on connection loss
+            - Puzzle-piece Bitcoin icon
 
             ### What happens
             1. Creates `C:\PuzzlePool` folder (Windows) or `~/.puzzle-pool` (Linux)
@@ -119,14 +134,5 @@ jobs:
             ### Requirements
             - NVIDIA GPU with CUDA drivers (for GPU mode)
             - CPU-only mode available if no NVIDIA GPU
-
-            ### Features
-            - Modern dark GUI with live stats
-            - Start / Pause / Stop buttons
-            - Normal & Eco scan modes
-            - GPU / CPU / CPU+GPU device selection
-            - Settings panel for all configuration
-            - System tray — close window to keep mining in background
-            - Auto-reconnect on connection loss
 
             Dashboard: https://starnetlive.space
