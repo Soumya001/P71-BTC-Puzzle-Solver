@@ -38,7 +38,7 @@ jobs:
           mkdir obj\GPU
           mkdir obj\hash
 
-          set CL_FLAGS=/c /O2 /EHsc /MD /DWIN32 /DWIN64 /DNDEBUG /D_CONSOLE /DWITHGPU /D_CRT_SECURE_NO_WARNINGS /I. /I"%CUDA_PATH%\include" /I%GMP_INC%
+          set CL_FLAGS=/c /O2 /EHsc /MT /DWIN32 /DWIN64 /DNDEBUG /D_CONSOLE /DWITHGPU /D_CRT_SECURE_NO_WARNINGS /I. /I"%CUDA_PATH%\include" /I%GMP_INC%
 
           echo === Compiling C++ sources ===
           for %%f in (Base58.cpp Bloom.cpp CmdParse.cpp GmpUtil.cpp IntGroup.cpp Int.cpp IntMod.cpp KeyHunt.cpp Main.cpp Point.cpp Random.cpp SECP256K1.cpp Timer.cpp) do (
@@ -59,7 +59,7 @@ jobs:
           )
 
           echo === Compiling CUDA kernel ===
-          nvcc --compile -O2 -m64 -DWITHGPU -DWIN32 -DWIN64 -D_CRT_SECURE_NO_WARNINGS -Xcompiler "/MD /O2 /EHsc" -I. -I"%CUDA_PATH%\include" -I%GMP_INC% -gencode=arch=compute_50,code=sm_50 -gencode=arch=compute_52,code=sm_52 -gencode=arch=compute_60,code=sm_60 -gencode=arch=compute_61,code=sm_61 -gencode=arch=compute_70,code=sm_70 -gencode=arch=compute_75,code=sm_75 -gencode=arch=compute_80,code=sm_80 -gencode=arch=compute_86,code=sm_86 -gencode=arch=compute_89,code=sm_89 "-gencode=arch=compute_90,code=sm_90" -o obj\GPU\GPUEngine.obj -c GPU\GPUEngine.cu
+          nvcc --compile -O2 -m64 -DWITHGPU -DWIN32 -DWIN64 -D_CRT_SECURE_NO_WARNINGS -Xcompiler "/MT /O2 /EHsc" -I. -I"%CUDA_PATH%\include" -I%GMP_INC% -gencode=arch=compute_50,code=sm_50 -gencode=arch=compute_52,code=sm_52 -gencode=arch=compute_60,code=sm_60 -gencode=arch=compute_61,code=sm_61 -gencode=arch=compute_70,code=sm_70 -gencode=arch=compute_75,code=sm_75 -gencode=arch=compute_80,code=sm_80 -gencode=arch=compute_86,code=sm_86 -gencode=arch=compute_89,code=sm_89 "-gencode=arch=compute_90,code=sm_90" -o obj\GPU\GPUEngine.obj -c GPU\GPUEngine.cu
           if errorlevel 1 exit /b 1
 
           echo === Linking ===
@@ -68,6 +68,13 @@ jobs:
 
           echo === Build complete ===
           dir KeyHunt.exe
+
+      - name: Verify binary
+        shell: cmd
+        run: |
+          cd keyhunt\KeyHunt-Cuda
+          KeyHunt.exe --help
+          echo Exit code: %ERRORLEVEL%
 
       - name: Upload KeyHunt.exe
         uses: actions/upload-artifact@v4
