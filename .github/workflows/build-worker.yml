@@ -22,7 +22,7 @@ jobs:
 
       - name: Build Windows EXE
         run: >
-          pyinstaller --onefile --name puzzle-worker --console
+          pyinstaller --onefile --name puzzle-worker --windowed
           --icon=icon.ico
           --add-data "icon.ico;."
           --add-data "icon.png;."
@@ -55,7 +55,7 @@ jobs:
 
       - name: Build Linux binary
         run: >
-          pyinstaller --onefile --name puzzle-worker-linux --strip --console
+          pyinstaller --onefile --name puzzle-worker-linux --strip --windowed
           --add-data "icon.ico:."
           --add-data "icon.png:."
           --hidden-import=customtkinter

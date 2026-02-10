@@ -30,7 +30,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-VERSION = "4.1.0"
+VERSION = "4.1.1"
 POOL_URL = "https://starnetlive.space"
 APP_NAME = "PuzzlePool"
 
@@ -1543,15 +1543,11 @@ class PoolWorker:
         threading.Thread(target=self._heartbeat_age_loop, daemon=True).start()
         self._fetch_pool_stats()
 
-        while True:
+        while not (self.ui and not self.ui.running):
             # Wait for user to start
             while self._user_state != "running":
-                if self._user_state == "stopped":
-                    if self.ui:
-                        self.ui.status = "IDLE"
-                        self.ui.status_color = YELLOW
-                    time.sleep(0.5)
-                    continue
+                if self.ui and not self.ui.running:
+                    return
                 time.sleep(0.5)
             # User pressed start — enter the work loop
             self.running = True
@@ -1612,6 +1608,12 @@ class PoolWorker:
                     if self._user_state != "running" or not self.running:
                         return
                     time.sleep(1)
+                continue
+
+            # Validate response has required fields
+            if work.get("status") != "ok" or "assignment_id" not in work:
+                self._log(f"Unexpected response: {str(work)[:200]}", RED)
+                time.sleep(5)
                 continue
 
             no_work = 0
