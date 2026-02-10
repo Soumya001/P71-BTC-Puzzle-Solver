@@ -28,7 +28,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-VERSION = "3.0.3"
+VERSION = "3.0.4"
 POOL_URL = "https://starnetlive.space"
 APP_NAME = "PuzzlePool"
 
@@ -404,6 +404,9 @@ class KeyHuntRunner:
             si = subprocess.STARTUPINFO()
             si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
 
+        if ui:
+            ui.log(f"CMD: {' '.join(cmd)}", GREY)
+
         try:
             self.proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -414,10 +417,12 @@ class KeyHuntRunner:
 
             t0 = time.time()
             cur_addr = None
+            output_lines = []
             for line in self.proc.stdout:
                 line = line.strip()
                 if not line:
                     continue
+                output_lines.append(line)
                 m = _RE_ADDR.search(line)
                 if m:
                     cur_addr = m.group(1)
@@ -456,6 +461,8 @@ class KeyHuntRunner:
             if (self.proc.returncode and self.proc.returncode != 0
                     and result["status"] == "complete"):
                 result["status"] = "error"
+                last = " | ".join(output_lines[-5:]) if output_lines else "no output"
+                result["error"] = f"exit code {self.proc.returncode}: {last}"
         except Exception as exc:
             result["status"] = "error"
             result["error"] = str(exc)
