@@ -102,18 +102,25 @@ jobs:
             puzzle-worker.exe
             puzzle-worker-linux
           body: |
-            ## Puzzle Pool Worker v4.1.4
+            ## Puzzle Pool Worker v4.1.5
 
             Download for your platform — just run it, everything is automatic:
             - **Windows**: `puzzle-worker.exe` — Double-click to run
             - **Linux**: `puzzle-worker-linux` — `chmod +x puzzle-worker-linux && ./puzzle-worker-linux`
 
-            ### What's New in v4.1.4
-            - **Real-time speed & progress** — fixed KeyHunt output parsing (\r-delimited progress lines now read correctly)
-            - **No CMD popup** on Windows (CREATE_NO_WINDOW + --windowed build)
-            - **Proper Windows taskbar icon** (AppUserModelID)
-            - **Settings dialog** improvements (centered on parent, proper modal behavior)
-            - **Crash-proof** — null stdout/stderr guard for frozen apps
+            ### What's New in v4.1.5
+            - **Thread safety** — GUI button updates from worker thread now use `after_idle` (prevents rare tkinter crashes)
+            - **Clean Stop** — speed, progress, and chunk info reset to zero when returning to IDLE
+            - **stdin isolation** — KeyHunt subprocess gets `/dev/null` stdin (prevents hangs in `--windowed` mode)
+            - **Hang-proof wait** — `proc.wait()` timeout now properly handled (kills hung KeyHunt instead of misreporting error)
+            - **Registration retry** — first-run registration retries 5 times with backoff if no internet
+
+            ### Previous (v4.1.4)
+            - Real-time speed & progress (KeyHunt \r-delimited parsing)
+            - No CMD popup on Windows (CREATE_NO_WINDOW + --windowed)
+            - Proper Windows taskbar icon (AppUserModelID)
+            - Settings dialog improvements (centered, modal)
+            - Crash-proof null stdout/stderr guard for frozen apps
 
             ### Features
             - Start / Pause / Stop controls

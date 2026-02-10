@@ -30,7 +30,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-VERSION = "4.1.4"
+VERSION = "4.1.5"
 POOL_URL = "https://starnetlive.space"
 APP_NAME = "PuzzlePool"
 
@@ -502,6 +502,7 @@ class KeyHuntRunner:
             # so Python's text-mode line iterator would never see them.
             self.proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
                 startupinfo=si, creationflags=CREATE_NO_WINDOW)
             self.pid = self.proc.pid
             if ui:
@@ -585,7 +586,14 @@ class KeyHuntRunner:
                     line_buf += byte
 
             if self.proc.poll() is None:
-                self.proc.wait(timeout=10)
+                try:
+                    self.proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    self.proc.kill()
+                    try:
+                        self.proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        pass
             if (self.proc.returncode and self.proc.returncode != 0
                     and result["status"] == "complete"):
                 result["status"] = "error"
@@ -1500,13 +1508,28 @@ class PoolWorker:
             self._log("Loaded saved credentials", GREEN)
             return
         name = cfg.get("worker_name", f"worker-{platform.node()}")
-        self._log(f"Registering as '{name}'...", YELLOW)
-        resp = self.api.post("/api/register", {"name": name})
-        if resp.get("status") != "ok":
-            raise RuntimeError(f"Registration failed: {resp}")
-        self.api.api_key = resp["api_key"]
-        _save_config({"api_key": resp["api_key"]})
-        self._log(f"Registered as worker #{resp['worker_id']}", GREEN)
+        max_retries = 5
+        for attempt in range(max_retries):
+            suffix = f" (attempt {attempt + 1}/{max_retries})" if attempt else ""
+            self._log(f"Registering as '{name}'...{suffix}", YELLOW)
+            try:
+                resp = self.api.post("/api/register", {"name": name})
+                if resp.get("status") != "ok":
+                    raise RuntimeError(f"Registration failed: {resp}")
+                self.api.api_key = resp["api_key"]
+                _save_config({"api_key": resp["api_key"]})
+                self._log(f"Registered as worker #{resp['worker_id']}", GREEN)
+                return
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait = 5 * (attempt + 1)
+                    self._log(f"Registration error: {e}. Retrying in {wait}s...", RED)
+                    if self.ui:
+                        self.ui.status = "RECONNECTING"
+                        self.ui.status_color = RED
+                    time.sleep(wait)
+                else:
+                    raise
 
     def _heartbeat_loop(self, assignment_id, range_start, range_end, interval):
         """Background thread: send heartbeats every `interval` seconds."""
@@ -1596,7 +1619,7 @@ class PoolWorker:
         if self.ui:
             self.ui.status = "IDLE"
             self.ui.status_color = YELLOW
-            self.ui._update_ctrl_buttons("idle")
+            self.ui.root.after_idle(self.ui._update_ctrl_buttons, "idle")
         self._log("Ready. Press Start to begin scanning.", CYAN)
 
         threading.Thread(target=self._stats_loop, daemon=True).start()
@@ -1617,7 +1640,11 @@ class PoolWorker:
                 if self.ui:
                     self.ui.status = "IDLE"
                     self.ui.status_color = YELLOW
-                    self.ui._update_ctrl_buttons("idle")
+                    self.ui.current_speed = 0.0
+                    self.ui.chunk_progress = 0.0
+                    self.ui.current_chunk = None
+                    self.ui.heartbeat_ok = False
+                    self.ui.root.after_idle(self.ui._update_ctrl_buttons, "idle")
                 continue
             # If the GUI itself is shutting down, break out
             if self.ui and not self.ui.running:
@@ -1627,7 +1654,7 @@ class PoolWorker:
         if self.ui:
             self.ui.status = "SCANNING"
             self.ui.status_color = GREEN
-            self.ui._update_ctrl_buttons("running")
+            self.ui.root.after_idle(self.ui._update_ctrl_buttons, "running")
 
         no_work = 0
         while self._user_state == "running":
