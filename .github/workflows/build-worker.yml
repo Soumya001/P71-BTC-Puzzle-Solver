@@ -95,25 +95,38 @@ jobs:
             puzzle-worker.exe
             puzzle-worker-linux
           body: |
-            ## Puzzle Pool Worker v3.0
+            ## Puzzle Pool Worker v4.1
 
             Download for your platform — just run it, everything is automatic:
             - **Windows**: `puzzle-worker.exe` — Double-click to run
             - **Linux**: `puzzle-worker-linux` — `chmod +x puzzle-worker-linux && ./puzzle-worker-linux`
 
+            ### What's New in v4.1
+            - **Start / Pause / Stop controls** — full control over scanning
+            - **Scan modes** — Normal (continuous) or Eco (cooldown between chunks)
+            - **Device selection** — GPU, CPU, or CPU+GPU
+            - **Settings dialog** — configure worker name, GPU ID, threads, modes
+            - **No CMD popup** on Windows (CREATE_NO_WINDOW)
+            - **Puzzle-piece Bitcoin icon**
+            - **Controls bar** with mode/device dropdowns
+
             ### What happens
             1. Creates `C:\PuzzlePool` folder (Windows) or `~/.puzzle-pool` (Linux)
             2. Auto-downloads the scanning engine (one time)
             3. Creates a desktop shortcut
-            4. Connects to the pool and starts mining
+            4. Connects to the pool — press Start to begin scanning
 
             ### Requirements
-            - NVIDIA GPU with CUDA drivers installed
+            - NVIDIA GPU with CUDA drivers (for GPU mode)
+            - CPU-only mode available if no NVIDIA GPU
 
             ### Features
             - Modern dark GUI with live stats
+            - Start / Pause / Stop buttons
+            - Normal & Eco scan modes
+            - GPU / CPU / CPU+GPU device selection
+            - Settings panel for all configuration
             - System tray — close window to keep mining in background
             - Auto-reconnect on connection loss
-            - Zero configuration needed
 
             Dashboard: https://starnetlive.space
