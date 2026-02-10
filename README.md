@@ -54,3 +54,7 @@ No private keys are ever stored on your machine.
 **What if the key is found?** The pool securely stores the key. Rewards distributed to contributors.
 
 **Can I see the source code?** Yes — `puzzle_worker.py` in this repo is the full source.
+
+## Scanning Engine
+
+The GPU scanning engine is [KeyHunt-Cuda](https://github.com/Soumya001/KeyHunt-Cuda) — our fork with build fixes for modern GCC/CUDA toolchains, tested on RTX 3060 Ti (~1.1 GKey/s). The worker auto-downloads the correct binary for your platform on first run.
