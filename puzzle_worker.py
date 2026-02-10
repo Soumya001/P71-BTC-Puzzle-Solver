@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 """
-Bitcoin Puzzle Pool Worker v3.0 - Fully Standalone App
+Bitcoin Puzzle Pool Worker v4.1 - Modes, Controls & Settings
 
+- Single-address mode for maximum GPU speed (~1,234 MKey/s)
+- Real-time heartbeat with actual scanned ranges
+- Start / Stop / Pause controls
+- Normal & Eco scan modes
+- CPU / GPU / CPU+GPU device selection
+- Settings dialog for all configuration
+- No canary system — all real data
+- Partial work preserved on crash via heartbeat progress
 - Auto-installs to C:\\PuzzlePool (Windows) or ~/.puzzle-pool (Linux)
-- Auto-downloads KeyHunt-Cuda scanning engine
-- Creates desktop shortcut with icon
-- System tray for background mining
-- Modern GUI with live stats
-- Zero setup required — just run and go
 """
 
-import base64
 import http.client
 import json
+import math
 import os
 import platform
 import re
@@ -21,20 +24,20 @@ import signal
 import ssl
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
-VERSION = "3.0.5"
+VERSION = "4.1.0"
 POOL_URL = "https://starnetlive.space"
 APP_NAME = "PuzzlePool"
 
 # ─── Platform paths ────────────────────────────────────────────────
 IS_WIN = platform.system() == "Windows"
 IS_FROZEN = getattr(sys, 'frozen', False)
+CREATE_NO_WINDOW = 0x08000000 if IS_WIN else 0
 
 if IS_WIN:
     INSTALL_DIR = Path("C:/PuzzlePool")
@@ -73,7 +76,7 @@ except ImportError:
 
 try:
     import pystray
-    from PIL import Image as PilImage, ImageDraw
+    from PIL import Image as PilImage, ImageDraw, ImageFont
     HAS_TRAY = True
 except ImportError:
     HAS_TRAY = False
@@ -109,26 +112,90 @@ class CLR:
     VDIM   = "#3a3a50"
 
 
-def _make_icon_image():
-    """Generate a 64x64 Bitcoin icon as PIL Image."""
+def _make_icon_image(size=256):
+    """Generate a puzzle-piece Bitcoin icon as PIL Image."""
     if not HAS_TRAY:
         return None
-    img = PilImage.new('RGBA', (64, 64), (0, 0, 0, 0))
+    img = PilImage.new('RGBA', (size, size), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    d.ellipse([2, 2, 61, 61], fill='#f7931a')
+
+    cx, cy = size / 2, size / 2
+    r = size * 0.42
+    tab_r = r * 0.2
+    body_r = r * 0.82
+
+    # Draw puzzle piece body (rounded square with 4 tabs)
+    # Main body - rounded rectangle
+    margin = size * 0.15
+    body = [margin, margin, size - margin, size - margin]
+    corner = size * 0.08
+    d.rounded_rectangle(body, radius=corner, fill='#f7931a')
+
+    # Top tab (outward)
+    tx = cx
+    ty = margin
+    d.ellipse([tx - tab_r, ty - tab_r * 1.2, tx + tab_r, ty + tab_r * 0.8],
+              fill='#f7931a')
+
+    # Right tab (outward)
+    rx = size - margin
+    ry = cy
+    d.ellipse([rx - tab_r * 0.8, ry - tab_r, rx + tab_r * 1.2, ry + tab_r],
+              fill='#f7931a')
+
+    # Bottom tab (inward - notch)
+    bx = cx
+    by = size - margin
+    d.ellipse([bx - tab_r, by - tab_r * 0.8, bx + tab_r, by + tab_r * 1.2],
+              fill='#f7931a')
+    # Cut the notch by drawing a darker ellipse inside
+    d.ellipse([bx - tab_r * 0.75, by - tab_r * 0.3, bx + tab_r * 0.75, by + tab_r * 0.9],
+              fill='#e67e00')
+
+    # Left tab (inward - notch)
+    lx = margin
+    ly = cy
+    d.ellipse([lx - tab_r * 1.2, ly - tab_r, lx + tab_r * 0.8, ly + tab_r],
+              fill='#f7931a')
+    d.ellipse([lx - tab_r * 0.9, ly - tab_r * 0.75, lx + tab_r * 0.3, ly + tab_r * 0.75],
+              fill='#e67e00')
+
+    # Gradient overlay (subtle shine)
+    overlay = PilImage.new('RGBA', (size, size), (0, 0, 0, 0))
+    od = ImageDraw.Draw(overlay)
+    for i in range(size // 3):
+        alpha = int(40 * (1 - i / (size // 3)))
+        od.line([(0, i), (size, i)], fill=(255, 255, 255, alpha))
+    img = PilImage.alpha_composite(img, overlay)
+    d = ImageDraw.Draw(img)
+
+    # Draw Bitcoin symbol
+    sym = "\u20bf"
+    font_size = int(size * 0.45)
+    font = None
     try:
-        from PIL import ImageFont
-        font = ImageFont.truetype("arial.ttf", 36)
+        font = ImageFont.truetype("arial.ttf", font_size)
     except Exception:
-        try:
-            font = ImageFont.truetype(
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
-        except Exception:
-            font = None
+        for fp in [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+        ]:
+            try:
+                font = ImageFont.truetype(fp, font_size)
+                break
+            except Exception:
+                continue
+
     if font:
-        d.text((32, 32), "B", fill='white', font=font, anchor='mm')
+        # Shadow
+        d.text((cx + 2, cy + 2), sym, fill=(0, 0, 0, 80), font=font, anchor='mm')
+        # Main text
+        d.text((cx, cy), sym, fill='white', font=font, anchor='mm')
     else:
-        d.text((22, 14), "B", fill='white')
+        # Fallback without font
+        d.text((cx - size * 0.08, cy - size * 0.12), "B", fill='white')
+
     return img
 
 
@@ -138,7 +205,7 @@ def _get_icon_image():
             return PilImage.open(str(ICON_PNG))
         except Exception:
             pass
-    return _make_icon_image()
+    return _make_icon_image(64)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -241,7 +308,7 @@ class Installer:
                     pass
         if not ICON_PNG.exists() and HAS_TRAY:
             try:
-                img = _make_icon_image()
+                img = _make_icon_image(256)
                 if img:
                     img.save(str(ICON_PNG), format='PNG')
             except Exception:
@@ -249,20 +316,19 @@ class Installer:
 
     @staticmethod
     def _is_valid_binary():
-        """Check if existing KeyHunt binary is valid (not a corrupt/wrong-platform file)."""
+        """Check if existing KeyHunt binary is valid."""
         if not KEYHUNT_PATH.exists():
             return False
         size = KEYHUNT_PATH.stat().st_size
-        if size < 500_000:  # valid binary is >10MB, reject tiny files
+        if size < 500_000:
             return False
-        # Check PE header on Windows, ELF on Linux
         try:
             with open(str(KEYHUNT_PATH), 'rb') as f:
                 magic = f.read(4)
             if IS_WIN:
-                return magic[:2] == b'MZ'  # PE executable
+                return magic[:2] == b'MZ'
             else:
-                return magic == b'\x7fELF'  # ELF executable
+                return magic == b'\x7fELF'
         except Exception:
             return False
 
@@ -270,7 +336,6 @@ class Installer:
     def download_keyhunt(progress_cb=None):
         if KEYHUNT_PATH.exists() and Installer._is_valid_binary():
             return True
-        # Remove invalid file if present
         if KEYHUNT_PATH.exists():
             try:
                 KEYHUNT_PATH.unlink()
@@ -332,7 +397,8 @@ class Installer:
             si = subprocess.STARTUPINFO()
             si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             subprocess.run(["powershell", "-Command", ps],
-                           capture_output=True, startupinfo=si, timeout=10)
+                           capture_output=True, startupinfo=si, timeout=10,
+                           creationflags=CREATE_NO_WINDOW)
         except Exception:
             pass
 
@@ -365,7 +431,14 @@ class Installer:
     def ensure_config():
         if CONFIG_FILE.exists():
             return
-        cfg = {"worker_name": f"worker-{platform.node()}", "gpu_id": 0}
+        cfg = {
+            "worker_name": f"worker-{platform.node()}",
+            "gpu_id": 0,
+            "device": "gpu",
+            "cpu_threads": 4,
+            "mode": "normal",
+            "eco_cooldown": 60,
+        }
         CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
 
 
@@ -376,58 +449,33 @@ class Installer:
 _RE_ADDR = re.compile(r"PubAddress:\s*(\S+)")
 _RE_KEY = re.compile(r"Priv\s*\(HEX\):\s*([0-9a-fA-F]+)")
 _RE_PROG = re.compile(r"\[.*?(\d+\.?\d*)%\]")
+_RE_SPEED = re.compile(r"\[(\d+\.?\d*)\s*([KMGTPE])[Kk]/s\]")
 _RE_BYE = re.compile(r"BYE")
-
-_B58 = b'123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
-
-def _addr_to_rmd160(addr):
-    """Decode a Bitcoin P2PKH address to its 20-byte RIPEMD-160 hash."""
-    n = 0
-    for c in addr.encode():
-        n = n * 58 + _B58.index(c)
-    data = n.to_bytes(25, 'big')
-    return data[1:21]  # strip version byte and 4-byte checksum
-
-def _make_bin_file(addrs, path):
-    """Create sorted binary rmd160 file for KeyHunt ADDRESSES mode."""
-    hashes = []
-    for a in addrs:
-        hashes.append(_addr_to_rmd160(a))
-    hashes.sort()
-    with open(str(path), 'wb') as f:
-        for h in hashes:
-            f.write(h)
 
 
 class KeyHuntRunner:
-    def __init__(self, path=None, gpu_id=0):
+    def __init__(self, path=None, gpu_id=0, device="gpu", cpu_threads=4):
         self.path = path or str(KEYHUNT_PATH)
         self.gpu_id = gpu_id
+        self.device = device
+        self.cpu_threads = cpu_threads
         self.proc = None
         self.pid = None
 
-    def run(self, rs, re_, target, canaries, ui=None, timeout=600):
+    def run(self, rs, re_, target, ui=None, timeout=1800):
+        """Run KeyHunt in single-address mode. No canaries."""
         s = rs.replace("0x", "").lstrip("0") or "0"
         e = re_.replace("0x", "").lstrip("0") or "0"
 
-        if len(canaries) > 0:
-            # Multi-address: write sorted binary rmd160 file
-            addrs = [target] + canaries
-            tmp = Path(tempfile.gettempdir()) / f"_pa_{os.getpid()}.bin"
-            _make_bin_file(addrs, tmp)
-            cmd = [self.path, "-m", "addresses", "-g",
-                   "--gpui", str(self.gpu_id),
-                   "-i", str(tmp),
-                   "--range", f"{s}:{e}"]
-        else:
-            # Single address mode
-            tmp = None
-            cmd = [self.path, "-m", "address", "-g",
-                   "--gpui", str(self.gpu_id),
-                   "--range", f"{s}:{e}", target]
+        cmd = [self.path, "-m", "address"]
+        if self.device in ("gpu", "cpu_gpu"):
+            cmd += ["-g", "--gpui", str(self.gpu_id)]
+        if self.device in ("cpu", "cpu_gpu"):
+            cmd += ["-t", str(self.cpu_threads)]
+        cmd += ["--range", f"{s}:{e}", target]
 
         result = {"status": "complete", "found_key": None,
-                  "canary_keys": {}, "progress": 0.0}
+                  "progress": 0.0, "speed": 0.0}
         si = None
         if IS_WIN:
             si = subprocess.STARTUPINFO()
@@ -439,7 +487,8 @@ class KeyHuntRunner:
         try:
             self.proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, bufsize=1, startupinfo=si)
+                text=True, bufsize=1, startupinfo=si,
+                creationflags=CREATE_NO_WINDOW)
             self.pid = self.proc.pid
             if ui:
                 ui.keyhunt_pid = self.pid
@@ -452,9 +501,11 @@ class KeyHuntRunner:
                 if not line:
                     continue
                 output_lines.append(line)
+
                 m = _RE_ADDR.search(line)
                 if m:
                     cur_addr = m.group(1)
+
                 m = _RE_KEY.search(line)
                 if m and cur_addr:
                     pk = m.group(1)
@@ -464,22 +515,31 @@ class KeyHuntRunner:
                         result["status"] = "found"
                         self.kill()
                         break
-                    elif cur_addr in canaries:
-                        result["canary_keys"][cur_addr] = "0x" + pk
-                        if ui:
-                            ui.canary_found_set.add(cur_addr)
-                            ui.canaries_found = len(result["canary_keys"])
                     cur_addr = None
+
                 m = _RE_PROG.search(line)
                 if m:
                     result["progress"] = float(m.group(1))
                     if ui:
                         ui.chunk_progress = result["progress"]
+
+                # Parse speed: [1234.56 MK/s]
+                m = _RE_SPEED.search(line)
+                if m:
+                    val = float(m.group(1))
+                    unit = m.group(2)
+                    multipliers = {"K": 1e3, "M": 1e6, "G": 1e9,
+                                   "T": 1e12, "P": 1e15, "E": 1e18}
+                    result["speed"] = val * multipliers.get(unit, 1e6)
+                    if ui:
+                        ui.current_speed = result["speed"]
+
                 if _RE_BYE.search(line):
                     result["status"] = "complete"
                     result["progress"] = 100.0
                     if ui:
                         ui.chunk_progress = 100.0
+
                 if time.time() - t0 > timeout:
                     result["status"] = "timeout"
                     self.kill()
@@ -501,11 +561,6 @@ class KeyHuntRunner:
             self.pid = None
             if ui:
                 ui.keyhunt_pid = None
-            if tmp:
-                try:
-                    tmp.unlink(missing_ok=True)
-                except Exception:
-                    pass
         return result
 
     def kill(self):
@@ -532,7 +587,8 @@ def _gpu_stats(gpu_id=0):
             si = subprocess.STARTUPINFO()
             si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         r = subprocess.run(cmd, capture_output=True, text=True,
-                           timeout=5, startupinfo=si)
+                           timeout=5, startupinfo=si,
+                           creationflags=CREATE_NO_WINDOW)
         if r.returncode == 0:
             p = [x.strip() for x in r.stdout.strip().split(",")]
             if len(p) >= 6:
@@ -590,7 +646,8 @@ def _cpu_ram():
             si = subprocess.STARTUPINFO()
             si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             r = subprocess.run(["wmic", "cpu", "get", "loadpercentage"],
-                               capture_output=True, text=True, timeout=5, startupinfo=si)
+                               capture_output=True, text=True, timeout=5,
+                               startupinfo=si, creationflags=CREATE_NO_WINDOW)
             for line in r.stdout.strip().split("\n"):
                 if line.strip().isdigit():
                     cpu = int(line.strip())
@@ -621,6 +678,122 @@ def _save_config(data):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# SETTINGS DIALOG
+# ═══════════════════════════════════════════════════════════════════
+
+class SettingsDialog:
+    def __init__(self, parent, current_config, on_save):
+        self._on_save = on_save
+        self.win = ctk.CTkToplevel(parent)
+        self.win.title("Settings")
+        self.win.geometry("420x480")
+        self.win.transient(parent)
+        self.win.grab_set()
+        self.win.resizable(False, False)
+        self.win.configure(fg_color=CLR.BG)
+
+        # Title
+        ctk.CTkLabel(self.win, text="Worker Settings", font=("", 18, "bold"),
+                     text_color=CLR.ACCENT).pack(pady=(20, 15))
+
+        form = ctk.CTkFrame(self.win, fg_color=CLR.CARD, corner_radius=10)
+        form.pack(fill="x", padx=20, pady=(0, 10))
+
+        self._fields = {}
+
+        # Worker Name
+        self._add_field(form, "Worker Name", "worker_name",
+                        current_config.get("worker_name", f"worker-{platform.node()}"),
+                        "entry")
+
+        # GPU ID
+        self._add_field(form, "GPU ID", "gpu_id",
+                        str(current_config.get("gpu_id", 0)),
+                        "entry")
+
+        # CPU Threads
+        self._add_field(form, "CPU Threads", "cpu_threads",
+                        str(current_config.get("cpu_threads", 4)),
+                        "entry")
+
+        # Device Mode
+        device_map = {"gpu": "GPU", "cpu": "CPU", "cpu_gpu": "CPU+GPU"}
+        cur_device = device_map.get(current_config.get("device", "gpu"), "GPU")
+        self._add_field(form, "Device Mode", "device",
+                        cur_device, "dropdown",
+                        options=["GPU", "CPU", "CPU+GPU"])
+
+        # Scan Mode
+        mode_map = {"normal": "Normal", "eco": "Eco"}
+        cur_mode = mode_map.get(current_config.get("mode", "normal"), "Normal")
+        self._add_field(form, "Scan Mode", "mode",
+                        cur_mode, "dropdown",
+                        options=["Normal", "Eco"])
+
+        # Eco Cooldown
+        self._add_field(form, "Eco Cooldown (s)", "eco_cooldown",
+                        str(current_config.get("eco_cooldown", 60)),
+                        "entry")
+
+        # Buttons
+        btn_frame = ctk.CTkFrame(self.win, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=20, pady=(10, 20))
+
+        ctk.CTkButton(btn_frame, text="Save", width=120, height=36,
+                      fg_color=CLR.GREEN, hover_color="#00c853",
+                      text_color="#000", font=("", 13, "bold"),
+                      command=self._save).pack(side="right", padx=(8, 0))
+
+        ctk.CTkButton(btn_frame, text="Cancel", width=100, height=36,
+                      fg_color=CLR.VDIM, hover_color=CLR.DIM,
+                      text_color=CLR.TEXT, font=("", 13),
+                      command=self.win.destroy).pack(side="right")
+
+    def _add_field(self, parent, label, key, default, kind, options=None):
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", padx=14, pady=(8, 2))
+        ctk.CTkLabel(row, text=label, font=("", 11), text_color=CLR.DIM,
+                     width=130, anchor="w").pack(side="left")
+        if kind == "entry":
+            var = ctk.StringVar(value=default)
+            entry = ctk.CTkEntry(row, textvariable=var, width=200, height=30,
+                                 fg_color="#1a1a30", border_color=CLR.VDIM,
+                                 text_color=CLR.TEXT)
+            entry.pack(side="right")
+            self._fields[key] = var
+        elif kind == "dropdown":
+            var = ctk.StringVar(value=default)
+            dd = ctk.CTkOptionMenu(row, variable=var, values=options,
+                                   width=200, height=30,
+                                   fg_color="#1a1a30",
+                                   button_color=CLR.ACCENT,
+                                   button_hover_color="#e67e00",
+                                   dropdown_fg_color=CLR.CARD,
+                                   text_color=CLR.TEXT)
+            dd.pack(side="right")
+            self._fields[key] = var
+
+    def _save(self):
+        device_rmap = {"GPU": "gpu", "CPU": "cpu", "CPU+GPU": "cpu_gpu"}
+        mode_rmap = {"Normal": "normal", "Eco": "eco"}
+
+        new_cfg = {
+            "worker_name": self._fields["worker_name"].get().strip()
+                           or f"worker-{platform.node()}",
+            "gpu_id": max(0, int(self._fields["gpu_id"].get() or 0)),
+            "cpu_threads": max(1, min(64, int(self._fields["cpu_threads"].get() or 4))),
+            "device": device_rmap.get(self._fields["device"].get(), "gpu"),
+            "mode": mode_rmap.get(self._fields["mode"].get(), "normal"),
+            "eco_cooldown": max(10, min(300, int(self._fields["eco_cooldown"].get() or 60))),
+        }
+
+        _save_config(new_cfg)
+        if self._on_save:
+            self._on_save(new_cfg)
+        self.win.destroy()
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GUI
 # ═══════════════════════════════════════════════════════════════════
 
@@ -636,6 +809,7 @@ class WorkerGUI:
         self._tick = 0
         self._tray = None
         self._worker_stop = None
+        self._worker_ref = None
 
         # ── Shared state (worker writes, GUI reads) ──
         self.status = "STARTING"
@@ -645,16 +819,15 @@ class WorkerGUI:
         self.gpu_name = "Detecting..."
         self.keyhunt_pid = None
         self.current_chunk = None
+        self.assignment_id = None
         self.chunk_range_start = ""
         self.chunk_range_end = ""
         self.chunk_progress = 0.0
-        self.canaries_total = 5
-        self.canaries_found = 0
-        self.canary_addresses = []
-        self.canary_found_set = set()
+        self.current_speed = 0.0
+        self.last_heartbeat_ago = 0.0
+        self.heartbeat_ok = False
         self.chunks_done = 0
         self.chunks_accepted = 0
-        self.chunks_rejected = 0
         self.keys_scanned = 0
         self.session_start = time.time()
         self.gpu_usage = 0
@@ -679,8 +852,8 @@ class WorkerGUI:
         # ── Window ──
         self.root = ctk.CTk()
         self.root.title(f"Puzzle Pool Worker v{VERSION}")
-        self.root.geometry("800x780")
-        self.root.minsize(740, 700)
+        self.root.geometry("800x850")
+        self.root.minsize(740, 760)
         if ICON_FILE.exists():
             try:
                 self.root.iconbitmap(str(ICON_FILE))
@@ -698,7 +871,7 @@ class WorkerGUI:
         self._inst = ctk.CTkFrame(self.root, fg_color="transparent")
         self._inst.pack(fill="both", expand=True)
         ctk.CTkFrame(self._inst, fg_color="transparent", height=150).pack()
-        ctk.CTkLabel(self._inst, text="B", font=("", 60, "bold"),
+        ctk.CTkLabel(self._inst, text="\u29c9", font=("", 60, "bold"),
                      text_color=CLR.ACCENT).pack()
         ctk.CTkLabel(self._inst, text="Puzzle Pool Worker",
                      font=("", 24, "bold"), text_color=CLR.ACCENT).pack(pady=(10, 5))
@@ -753,13 +926,79 @@ class WorkerGUI:
         hdr = ctk.CTkFrame(m, fg_color="#14142a", corner_radius=10, height=52)
         hdr.pack(fill="x", padx=10, pady=(8, 6))
         hdr.pack_propagate(False)
-        self._lbl_btc = ctk.CTkLabel(hdr, text="BTC", font=("", 20, "bold"),
+        self._lbl_btc = ctk.CTkLabel(hdr, text="\u29c9", font=("", 22, "bold"),
                                       text_color=CLR.ACCENT)
         self._lbl_btc.pack(side="left", padx=(16, 8))
         ctk.CTkLabel(hdr, text="PUZZLE POOL WORKER", font=("", 15, "bold"),
                      text_color=CLR.ACCENT).pack(side="left")
-        ctk.CTkLabel(hdr, text=f"v{VERSION}", font=("", 10),
-                     text_color=CLR.DIM).pack(side="right", padx=16)
+        # Version badge
+        vbadge = ctk.CTkFrame(hdr, fg_color=CLR.ACCENT, corner_radius=6,
+                              width=50, height=20)
+        vbadge.pack(side="right", padx=16)
+        vbadge.pack_propagate(False)
+        ctk.CTkLabel(vbadge, text=f"v{VERSION}", font=("", 9, "bold"),
+                     text_color="#000").pack(expand=True)
+
+        # ── Controls Bar ──
+        ctrl = ctk.CTkFrame(m, fg_color=CLR.CARD, corner_radius=10)
+        ctrl.pack(fill="x", **pad)
+        ci = ctk.CTkFrame(ctrl, fg_color="transparent")
+        ci.pack(fill="x", padx=14, pady=8)
+
+        # Start / Pause / Stop buttons
+        self._btn_start = ctk.CTkButton(
+            ci, text="\u25b6 Start", width=90, height=32,
+            fg_color=CLR.GREEN, hover_color="#00c853",
+            text_color="#000", font=("", 12, "bold"),
+            command=self._on_start)
+        self._btn_start.pack(side="left", padx=(0, 6))
+
+        self._btn_pause = ctk.CTkButton(
+            ci, text="\u23f8 Pause", width=90, height=32,
+            fg_color=CLR.YELLOW, hover_color="#ffab00",
+            text_color="#000", font=("", 12, "bold"),
+            command=self._on_pause, state="disabled")
+        self._btn_pause.pack(side="left", padx=(0, 6))
+
+        self._btn_stop = ctk.CTkButton(
+            ci, text="\u23f9 Stop", width=90, height=32,
+            fg_color=CLR.RED, hover_color="#d50000",
+            text_color="#fff", font=("", 12, "bold"),
+            command=self._on_stop, state="disabled")
+        self._btn_stop.pack(side="left", padx=(0, 16))
+
+        # Mode dropdown
+        ctk.CTkLabel(ci, text="Mode:", font=("", 10), text_color=CLR.DIM).pack(side="left", padx=(0, 4))
+        cfg = _load_config()
+        mode_map = {"normal": "Normal", "eco": "Eco"}
+        self._var_mode = ctk.StringVar(value=mode_map.get(cfg.get("mode", "normal"), "Normal"))
+        self._dd_mode = ctk.CTkOptionMenu(
+            ci, variable=self._var_mode, values=["Normal", "Eco"],
+            width=90, height=28, fg_color="#1a1a30",
+            button_color=CLR.ACCENT, button_hover_color="#e67e00",
+            dropdown_fg_color=CLR.CARD, text_color=CLR.TEXT,
+            command=self._on_mode_change)
+        self._dd_mode.pack(side="left", padx=(0, 12))
+
+        # Device dropdown
+        ctk.CTkLabel(ci, text="Device:", font=("", 10), text_color=CLR.DIM).pack(side="left", padx=(0, 4))
+        device_map = {"gpu": "GPU", "cpu": "CPU", "cpu_gpu": "CPU+GPU"}
+        self._var_device = ctk.StringVar(value=device_map.get(cfg.get("device", "gpu"), "GPU"))
+        self._dd_device = ctk.CTkOptionMenu(
+            ci, variable=self._var_device, values=["GPU", "CPU", "CPU+GPU"],
+            width=100, height=28, fg_color="#1a1a30",
+            button_color=CLR.ACCENT, button_hover_color="#e67e00",
+            dropdown_fg_color=CLR.CARD, text_color=CLR.TEXT,
+            command=self._on_device_change)
+        self._dd_device.pack(side="left", padx=(0, 12))
+
+        # Settings gear button
+        self._btn_settings = ctk.CTkButton(
+            ci, text="\u2699", width=32, height=32,
+            fg_color=CLR.VDIM, hover_color=CLR.DIM,
+            text_color=CLR.TEXT, font=("", 16),
+            command=self._on_settings)
+        self._btn_settings.pack(side="right")
 
         # Status
         sc = ctk.CTkFrame(m, fg_color=CLR.CARD, corner_radius=10)
@@ -806,14 +1045,18 @@ class WorkerGUI:
         self._lbl_pct = ctk.CTkLabel(pb, text="0.0%", font=("", 12, "bold"),
                                       text_color=CLR.ACCENT, width=65)
         self._lbl_pct.pack(side="right", padx=(10, 0))
-        cr = ctk.CTkFrame(si2, fg_color="transparent")
-        cr.pack(anchor="w", pady=(8, 0))
-        ctk.CTkLabel(cr, text="CANARIES", font=("", 10), text_color=CLR.DIM).pack(side="left", padx=(0, 8))
-        self._can = []
-        for _ in range(5):
-            l = ctk.CTkLabel(cr, text="\u25cb", font=("", 12), text_color=CLR.VDIM)
-            l.pack(side="left", padx=3)
-            self._can.append(l)
+
+        # Heartbeat indicator
+        hb_row = ctk.CTkFrame(si2, fg_color="transparent")
+        hb_row.pack(anchor="w", pady=(8, 0))
+        ctk.CTkLabel(hb_row, text="HEARTBEAT", font=("", 10), text_color=CLR.DIM).pack(side="left", padx=(0, 8))
+        self._lbl_hb_dot = ctk.CTkLabel(hb_row, text="\u25cf", font=("", 12), text_color=CLR.VDIM)
+        self._lbl_hb_dot.pack(side="left", padx=3)
+        self._lbl_hb_text = ctk.CTkLabel(hb_row, text="--", font=("", 10), text_color=CLR.DIM)
+        self._lbl_hb_text.pack(side="left", padx=(6, 0))
+        ctk.CTkLabel(hb_row, text="SPEED", font=("", 10), text_color=CLR.DIM).pack(side="left", padx=(24, 8))
+        self._lbl_cur_speed = ctk.CTkLabel(hb_row, text="--", font=("", 10, "bold"), text_color=CLR.CYAN)
+        self._lbl_cur_speed.pack(side="left")
 
         # Stats
         st = ctk.CTkFrame(m, fg_color=CLR.CARD, corner_radius=10)
@@ -900,6 +1143,85 @@ class WorkerGUI:
         ctk.CTkLabel(ft, text="Close = minimize to tray", font=("", 10),
                      text_color=CLR.DIM).pack(side="right")
 
+    # ────────── Control handlers ──────────
+
+    def _on_start(self):
+        if self._worker_ref:
+            self._worker_ref._user_state = "running"
+        self._update_ctrl_buttons("running")
+        self.log("User: Start", GREEN)
+
+    def _on_pause(self):
+        if self._worker_ref:
+            self._worker_ref._user_state = "paused"
+        self._update_ctrl_buttons("paused")
+        self.log("User: Pause (will pause after current assignment)", YELLOW)
+
+    def _on_stop(self):
+        if self._worker_ref:
+            self._worker_ref._user_state = "stopped"
+            self._worker_ref.running = False
+            self._worker_ref.runner.kill()
+        self._update_ctrl_buttons("stopped")
+        self.log("User: Stop", RED)
+
+    def _update_ctrl_buttons(self, state):
+        if state == "running":
+            self._btn_start.configure(state="disabled")
+            self._btn_pause.configure(state="normal")
+            self._btn_stop.configure(state="normal")
+        elif state == "paused":
+            self._btn_start.configure(state="normal", text="\u25b6 Resume")
+            self._btn_pause.configure(state="disabled")
+            self._btn_stop.configure(state="normal")
+        elif state == "stopped":
+            self._btn_start.configure(state="normal", text="\u25b6 Start")
+            self._btn_pause.configure(state="disabled")
+            self._btn_stop.configure(state="disabled")
+        elif state == "idle":
+            self._btn_start.configure(state="normal", text="\u25b6 Start")
+            self._btn_pause.configure(state="disabled")
+            self._btn_stop.configure(state="disabled")
+
+    def _on_mode_change(self, value):
+        mode_rmap = {"Normal": "normal", "Eco": "eco"}
+        new_mode = mode_rmap.get(value, "normal")
+        _save_config({"mode": new_mode})
+        if self._worker_ref:
+            self._worker_ref.mode = new_mode
+        self.log(f"Mode changed to: {value}", CYAN)
+
+    def _on_device_change(self, value):
+        device_rmap = {"GPU": "gpu", "CPU": "cpu", "CPU+GPU": "cpu_gpu"}
+        new_device = device_rmap.get(value, "gpu")
+        _save_config({"device": new_device})
+        if self._worker_ref:
+            self._worker_ref.device = new_device
+            self._worker_ref.runner.device = new_device
+        self.log(f"Device changed to: {value} (applies on next assignment)", CYAN)
+
+    def _on_settings(self):
+        cfg = _load_config()
+        SettingsDialog(self.root, cfg, self._apply_settings)
+
+    def _apply_settings(self, new_cfg):
+        if self._worker_ref:
+            w = self._worker_ref
+            w.mode = new_cfg.get("mode", w.mode)
+            w.eco_cooldown = new_cfg.get("eco_cooldown", w.eco_cooldown)
+            w.device = new_cfg.get("device", w.device)
+            w.runner.device = w.device
+            w.runner.gpu_id = new_cfg.get("gpu_id", w.gpu_id)
+            w.runner.cpu_threads = new_cfg.get("cpu_threads", w.runner.cpu_threads)
+            w.gpu_id = new_cfg.get("gpu_id", w.gpu_id)
+        self.worker_name = new_cfg.get("worker_name", self.worker_name)
+        # Sync dropdowns
+        mode_map = {"normal": "Normal", "eco": "Eco"}
+        device_map = {"gpu": "GPU", "cpu": "CPU", "cpu_gpu": "CPU+GPU"}
+        self._var_mode.set(mode_map.get(new_cfg.get("mode", "normal"), "Normal"))
+        self._var_device.set(device_map.get(new_cfg.get("device", "gpu"), "GPU"))
+        self.log("Settings saved", GREEN)
+
     # ────────── Formatting ──────────
 
     @staticmethod
@@ -914,9 +1236,12 @@ class WorkerGUI:
 
     @staticmethod
     def _fs(v):
+        if v >= 1e18: return f"{v/1e18:.2f} EK/s"
+        if v >= 1e15: return f"{v/1e15:.2f} PK/s"
         if v >= 1e12: return f"{v/1e12:.2f} TK/s"
         if v >= 1e9:  return f"{v/1e9:.2f} GK/s"
         if v >= 1e6:  return f"{v/1e6:.2f} MK/s"
+        if v >= 1e3:  return f"{v/1e3:.2f} KK/s"
         return f"{v:.0f} K/s"
 
     @staticmethod
@@ -980,23 +1305,26 @@ class WorkerGUI:
         self._pb_scan.set(max(0, min(1, self.chunk_progress / 100)))
         self._lbl_pct.configure(text=f"{self.chunk_progress:.1f}%")
 
-        for i in range(5):
-            if i < len(self.canary_addresses):
-                a = self.canary_addresses[i]
-                sh = a[:5] + ".." + a[-3:]
-                if a in self.canary_found_set:
-                    self._can[i].configure(text=f"\u2713 {sh}", text_color=CLR.GREEN)
-                else:
-                    self._can[i].configure(text=f"\u25cb {sh}", text_color=CLR.VDIM)
-            else:
-                self._can[i].configure(text="\u25cb", text_color=CLR.VDIM)
+        # Heartbeat indicator
+        if self.heartbeat_ok:
+            ago = self.last_heartbeat_ago
+            self._lbl_hb_dot.configure(text_color=CLR.GREEN)
+            self._lbl_hb_text.configure(text=f"{ago:.0f}s ago", text_color=CLR.GREEN)
+        else:
+            self._lbl_hb_dot.configure(text_color=CLR.VDIM)
+            self._lbl_hb_text.configure(text="--", text_color=CLR.DIM)
+
+        # Current speed from KeyHunt
+        if self.current_speed > 0:
+            self._lbl_cur_speed.configure(text=self._fs(self.current_speed))
+        else:
+            self._lbl_cur_speed.configure(text="--")
 
         el = time.time() - self.session_start
         spd = self.keys_scanned / el if el > 0 and self.keys_scanned > 0 else 0
         ct = f"{self.chunks_done} done"
         if self.chunks_accepted: ct += f"  {self.chunks_accepted} ok"
-        if self.chunks_rejected: ct += f"  {self.chunks_rejected} rej"
-        self._sv["chunks"].configure(text=ct, text_color=CLR.RED if self.chunks_rejected else CLR.GREEN)
+        self._sv["chunks"].configure(text=ct, text_color=CLR.GREEN)
         self._sv["keys"].configure(text=self._fk(self.keys_scanned), text_color=CLR.ACCENT)
         self._sv["speed"].configure(text=self._fs(spd), text_color=CLR.CYAN)
         self._sv["uptime"].configure(text=self._fd(el), text_color=CLR.BLUE)
@@ -1085,13 +1413,20 @@ class WorkerGUI:
 # ═══════════════════════════════════════════════════════════════════
 
 class PoolWorker:
-    def __init__(self, gpu_id=0, ui=None):
+    def __init__(self, gpu_id=0, ui=None, device="gpu", cpu_threads=4,
+                 mode="normal", eco_cooldown=60):
         self.gpu_id = gpu_id
         self.api = PoolAPI(POOL_URL)
-        self.runner = KeyHuntRunner(str(KEYHUNT_PATH), gpu_id)
+        self.runner = KeyHuntRunner(str(KEYHUNT_PATH), gpu_id,
+                                    device=device, cpu_threads=cpu_threads)
         self.ui = ui
         self.running = True
-        self.chunk_size = 2 ** 36
+        self._scanning = False
+        self._last_heartbeat_time = 0.0
+        self._user_state = "running"  # "running", "paused", "stopped"
+        self.device = device
+        self.mode = mode
+        self.eco_cooldown = eco_cooldown
 
     def _log(self, msg, color=LGREY):
         if self.ui:
@@ -1111,6 +1446,36 @@ class PoolWorker:
         self.api.api_key = resp["api_key"]
         _save_config({"api_key": resp["api_key"]})
         self._log(f"Registered as worker #{resp['worker_id']}", GREEN)
+
+    def _heartbeat_loop(self, assignment_id, range_start, range_end, interval):
+        """Background thread: send heartbeats every `interval` seconds."""
+        while self._scanning:
+            time.sleep(interval)
+            if not self._scanning:
+                break
+            progress = self.ui.chunk_progress if self.ui else 0
+            span = range_end - range_start
+            scanned_up_to = range_start + int((progress / 100) * span)
+            speed = self.ui.current_speed if self.ui else 0
+
+            try:
+                resp = self.api.post("/api/heartbeat", {
+                    "assignment_id": assignment_id,
+                    "scanned_up_to": hex(scanned_up_to),
+                    "speed": speed,
+                    "progress_pct": progress,
+                })
+                self._last_heartbeat_time = time.time()
+                if self.ui:
+                    self.ui.heartbeat_ok = True
+                    self.ui.last_heartbeat_ago = 0.0
+
+                if not resp.get("continue", True):
+                    self._log("Server revoked assignment", RED)
+                    self.runner.kill()
+                    break
+            except Exception as e:
+                self._log(f"Heartbeat failed: {e}", YELLOW)
 
     def _fetch_pool_stats(self):
         try:
@@ -1149,6 +1514,13 @@ class PoolWorker:
                 self.ui.ram_total = cr["ram_total"]
             time.sleep(2)
 
+    def _heartbeat_age_loop(self):
+        """Update heartbeat age display."""
+        while self.running:
+            if self.ui and self._last_heartbeat_time > 0:
+                self.ui.last_heartbeat_ago = time.time() - self._last_heartbeat_time
+            time.sleep(1)
+
     def run(self):
         cfg = _load_config()
         name = cfg.get("worker_name", f"worker-{platform.node()}")
@@ -1157,14 +1529,68 @@ class PoolWorker:
             self.ui.status = "CONNECTING"
             self.ui.status_color = YELLOW
         self.register()
+
+        # Wait for user to press Start (initial state is idle)
+        self._user_state = "stopped"
+        if self.ui:
+            self.ui.status = "IDLE"
+            self.ui.status_color = YELLOW
+            self.ui._update_ctrl_buttons("idle")
+        self._log("Ready. Press Start to begin scanning.", CYAN)
+
+        threading.Thread(target=self._stats_loop, daemon=True).start()
+        threading.Thread(target=self._sys_loop, daemon=True).start()
+        threading.Thread(target=self._heartbeat_age_loop, daemon=True).start()
+        self._fetch_pool_stats()
+
+        while True:
+            # Wait for user to start
+            while self._user_state != "running":
+                if self._user_state == "stopped":
+                    if self.ui:
+                        self.ui.status = "IDLE"
+                        self.ui.status_color = YELLOW
+                    time.sleep(0.5)
+                    continue
+                time.sleep(0.5)
+            # User pressed start — enter the work loop
+            self.running = True
+            self._work_loop()
+            # If we exited the work loop, go back to waiting
+            if self._user_state == "stopped":
+                if self.ui:
+                    self.ui.status = "IDLE"
+                    self.ui.status_color = YELLOW
+                    self.ui._update_ctrl_buttons("idle")
+                continue
+            # If the GUI itself is shutting down, break out
+            if self.ui and not self.ui.running:
+                break
+
+    def _work_loop(self):
         if self.ui:
             self.ui.status = "SCANNING"
             self.ui.status_color = GREEN
-        threading.Thread(target=self._stats_loop, daemon=True).start()
-        threading.Thread(target=self._sys_loop, daemon=True).start()
-        self._fetch_pool_stats()
+            self.ui._update_ctrl_buttons("running")
+
         no_work = 0
-        while self.running:
+        while self.running and self._user_state == "running":
+            # Check pause state
+            while self._user_state == "paused":
+                if self.ui:
+                    self.ui.status = "PAUSED"
+                    self.ui.status_color = YELLOW
+                time.sleep(1)
+            if self._user_state == "stopped" or not self.running:
+                break
+
+            # Sync device/mode from live settings
+            self.runner.device = self.device
+            cfg = _load_config()
+            self.runner.cpu_threads = cfg.get("cpu_threads", self.runner.cpu_threads)
+            self.runner.gpu_id = cfg.get("gpu_id", self.runner.gpu_id)
+
+            # Get single assignment
             try:
                 work = self.api.get("/api/work")
             except Exception as e:
@@ -1174,6 +1600,7 @@ class PoolWorker:
                     self.ui.status_color = RED
                 time.sleep(10)
                 continue
+
             if work.get("status") == "no_work":
                 no_work += 1
                 wait = min(30 * no_work, 300)
@@ -1181,69 +1608,124 @@ class PoolWorker:
                 if self.ui:
                     self.ui.status = "WAITING"
                     self.ui.status_color = YELLOW
-                time.sleep(wait)
+                for _ in range(wait):
+                    if self._user_state != "running" or not self.running:
+                        return
+                    time.sleep(1)
                 continue
+
             no_work = 0
             if self.ui:
                 self.ui.status = "SCANNING"
                 self.ui.status_color = GREEN
+
+            assignment_id = work["assignment_id"]
             target = work["target_address"]
-            chunks = work["chunks"]
-            self._log(f"Got {len(chunks)} chunks from pool", CYAN)
-            completed = []
-            for chunk in chunks:
-                if not self.running:
-                    break
-                cid = chunk["chunk_id"]
-                rs = chunk["range_start"]
-                re_ = chunk["range_end"]
-                canaries = chunk["canary_addresses"]
+            rs = work["range_start"]
+            re_ = work["range_end"]
+            heartbeat_interval = work.get("heartbeat_interval", 30)
+
+            # Parse range for heartbeat calculations
+            range_start_int = int(rs, 16)
+            range_end_int = int(re_, 16)
+            chunk_size = range_end_int - range_start_int + 1
+
+            if self.ui:
+                self.ui.current_chunk = work.get("chunk_id", 0)
+                self.ui.assignment_id = assignment_id
+                self.ui.chunk_range_start = rs
+                self.ui.chunk_range_end = re_
+                self.ui.chunk_progress = 0.0
+                self.ui.current_speed = 0.0
+                self.ui.heartbeat_ok = False
+
+            self._log(f"Assignment {assignment_id[:8]}... range {rs} -> {re_}", LBLUE)
+
+            # Start heartbeat thread
+            self._scanning = True
+            hb_thread = threading.Thread(
+                target=self._heartbeat_loop,
+                args=(assignment_id, range_start_int, range_end_int, heartbeat_interval),
+                daemon=True,
+            )
+            hb_thread.start()
+
+            # Run KeyHunt
+            result = self.runner.run(rs, re_, target, self.ui)
+
+            # Stop heartbeat
+            self._scanning = False
+            hb_thread.join(timeout=5)
+
+            if result["status"] == "found":
+                self._log("KEY FOUND! Reporting to pool...", GREEN)
                 if self.ui:
-                    self.ui.current_chunk = cid
-                    self.ui.chunk_range_start = rs
-                    self.ui.chunk_range_end = re_
-                    self.ui.chunk_progress = 0.0
-                    self.ui.canary_addresses = canaries
-                    self.ui.canary_found_set = set()
-                    self.ui.canaries_found = 0
-                self._log(f"Scanning chunk #{cid:,}...", LBLUE)
-                result = self.runner.run(rs, re_, target, canaries, self.ui)
-                if result["status"] == "found":
-                    self._log("KEY FOUND! Reporting to pool...", GREEN)
-                    if self.ui:
-                        self.ui.status = "KEY FOUND!"
-                        self.ui.status_color = GREEN
-                    try:
-                        self.api.post("/api/found", {
-                            "chunk_id": cid,
-                            "private_key": result["found_key"]["privkey"],
-                        })
-                        self._log("Key reported to pool!", GREEN)
-                    except Exception as e:
-                        self._log(f"FAILED to report key: {e}", RED)
-                    completed.append({"chunk_id": cid, "canary_keys": result["canary_keys"]})
-                    break
-                if result["status"] in ("complete", "timeout"):
-                    nc = len(result["canary_keys"])
-                    self._log(f"Chunk #{cid:,} done. Canaries: {nc}/{len(canaries)}",
-                              GREEN if nc == len(canaries) else YELLOW)
-                    completed.append({"chunk_id": cid, "canary_keys": result["canary_keys"]})
-                    if self.ui:
-                        self.ui.chunks_done += 1
-                        self.ui.keys_scanned += self.chunk_size
-                else:
-                    self._log(f"Chunk #{cid:,} error: {result.get('error', result['status'])}", RED)
-            if completed:
+                    self.ui.status = "KEY FOUND!"
+                    self.ui.status_color = GREEN
                 try:
-                    rpt = self.api.post("/api/work", {"results": completed})
-                    ac, rj = rpt.get("accepted", 0), rpt.get("rejected", 0)
-                    if self.ui:
-                        self.ui.chunks_accepted += ac
-                        self.ui.chunks_rejected += rj
-                    self._log(f"Reported: {ac} accepted, {rj} rejected",
-                              GREEN if rj == 0 else YELLOW)
+                    self.api.post("/api/found", {
+                        "chunk_id": work.get("chunk_id", 0),
+                        "private_key": result["found_key"]["privkey"],
+                    })
+                    self._log("Key reported to pool!", GREEN)
+                except Exception as e:
+                    self._log(f"FAILED to report key: {e}", RED)
+                try:
+                    self.api.post("/api/work/complete", {
+                        "assignment_id": assignment_id,
+                        "range_start": rs,
+                        "range_end": re_,
+                    })
+                except Exception:
+                    pass
+                continue
+
+            if result["status"] in ("complete", "timeout"):
+                self._log(f"Assignment {assignment_id[:8]}... complete", GREEN)
+                try:
+                    rpt = self.api.post("/api/work/complete", {
+                        "assignment_id": assignment_id,
+                        "range_start": rs,
+                        "range_end": re_,
+                    })
+                    if rpt.get("accepted"):
+                        if self.ui:
+                            self.ui.chunks_done += 1
+                            self.ui.chunks_accepted += 1
+                            self.ui.keys_scanned += chunk_size
+                        self._log("Accepted by pool", GREEN)
+                    else:
+                        self._log(f"Rejected: {rpt.get('detail', 'unknown')}", YELLOW)
                 except Exception as e:
                     self._log(f"Report error: {e}", RED)
+            else:
+                self._log(f"Assignment error: {result.get('error', result['status'])}", RED)
+                if self.ui and self.ui.chunk_progress > 0:
+                    self._log(f"Partial progress: {self.ui.chunk_progress:.1f}%", YELLOW)
+
+            if self.ui:
+                self.ui.current_chunk = None
+                self.ui.heartbeat_ok = False
+
+            # Eco mode cooldown
+            if self.mode == "eco" and self._user_state == "running" and self.running:
+                self._log(f"Eco mode: cooling down {self.eco_cooldown}s...", CYAN)
+                if self.ui:
+                    self.ui.status = "ECO COOLDOWN"
+                    self.ui.status_color = CYAN
+                for i in range(self.eco_cooldown):
+                    if self._user_state != "running" or not self.running:
+                        break
+                    time.sleep(1)
+
+            # Check pause after assignment
+            while self._user_state == "paused":
+                if self.ui:
+                    self.ui.status = "PAUSED"
+                    self.ui.status_color = YELLOW
+                time.sleep(1)
+            if self._user_state == "stopped" or not self.running:
+                break
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1291,8 +1773,20 @@ def _bg_thread(gui):
         gui.switch_to_main()
 
         cfg = _load_config()
-        worker = PoolWorker(cfg.get("gpu_id", 0), gui)
-        gui._worker_stop = lambda: (setattr(worker, 'running', False), worker.runner.kill())
+        worker = PoolWorker(
+            gpu_id=cfg.get("gpu_id", 0),
+            ui=gui,
+            device=cfg.get("device", "gpu"),
+            cpu_threads=cfg.get("cpu_threads", 4),
+            mode=cfg.get("mode", "normal"),
+            eco_cooldown=cfg.get("eco_cooldown", 60),
+        )
+        gui._worker_ref = worker
+        gui._worker_stop = lambda: (
+            setattr(worker, '_user_state', 'stopped'),
+            setattr(worker, 'running', False),
+            worker.runner.kill(),
+        )
         worker.run()
     except Exception as e:
         gui.log(f"Fatal: {e}", RED)
