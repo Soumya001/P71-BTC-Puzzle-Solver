@@ -30,7 +30,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-VERSION = "4.1.1"
+VERSION = "4.1.2"
 POOL_URL = "https://starnetlive.space"
 APP_NAME = "PuzzlePool"
 
@@ -1610,9 +1610,32 @@ class PoolWorker:
                     time.sleep(1)
                 continue
 
-            # Validate response has required fields
-            if work.get("status") != "ok" or "assignment_id" not in work:
+            # Validate response
+            if work.get("status") != "ok":
                 self._log(f"Unexpected response: {str(work)[:200]}", RED)
+                time.sleep(5)
+                continue
+
+            # Normalize response — handle both old (chunks array) and new (flat) formats
+            if "chunks" in work and isinstance(work["chunks"], list) and work["chunks"]:
+                # Old format: {status, target_address, chunks: [{chunk_id, range_start, range_end, ...}]}
+                chunk = work["chunks"][0]
+                assignment_id = work.get("assignment_id", str(chunk["chunk_id"]))
+                target = work["target_address"]
+                rs = chunk["range_start"]
+                re_ = chunk["range_end"]
+                chunk_id = chunk["chunk_id"]
+                heartbeat_interval = work.get("heartbeat_interval", 30)
+            elif "assignment_id" in work:
+                # New format: {status, assignment_id, chunk_id, target_address, range_start, range_end, ...}
+                assignment_id = work["assignment_id"]
+                target = work["target_address"]
+                rs = work["range_start"]
+                re_ = work["range_end"]
+                chunk_id = work.get("chunk_id", 0)
+                heartbeat_interval = work.get("heartbeat_interval", 30)
+            else:
+                self._log(f"Unknown work format: {str(work)[:200]}", RED)
                 time.sleep(5)
                 continue
 
@@ -1621,19 +1644,13 @@ class PoolWorker:
                 self.ui.status = "SCANNING"
                 self.ui.status_color = GREEN
 
-            assignment_id = work["assignment_id"]
-            target = work["target_address"]
-            rs = work["range_start"]
-            re_ = work["range_end"]
-            heartbeat_interval = work.get("heartbeat_interval", 30)
-
             # Parse range for heartbeat calculations
             range_start_int = int(rs, 16)
             range_end_int = int(re_, 16)
             chunk_size = range_end_int - range_start_int + 1
 
             if self.ui:
-                self.ui.current_chunk = work.get("chunk_id", 0)
+                self.ui.current_chunk = chunk_id
                 self.ui.assignment_id = assignment_id
                 self.ui.chunk_range_start = rs
                 self.ui.chunk_range_end = re_
@@ -1666,7 +1683,7 @@ class PoolWorker:
                     self.ui.status_color = GREEN
                 try:
                     self.api.post("/api/found", {
-                        "chunk_id": work.get("chunk_id", 0),
+                        "chunk_id": chunk_id,
                         "private_key": result["found_key"]["privkey"],
                     })
                     self._log("Key reported to pool!", GREEN)
