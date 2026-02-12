@@ -1577,7 +1577,7 @@ class PoolWorker:
     def _stats_loop(self):
         while self.running:
             self._fetch_pool_stats()
-            time.sleep(10)
+            time.sleep(30)
 
     def _sys_loop(self):
         while self.running:
