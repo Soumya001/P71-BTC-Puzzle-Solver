@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Bitcoin Puzzle Pool Worker v4.2.2 - AMOLED Hacker UI
+Bitcoin Puzzle Pool Worker v4.3.0 - Premium Fintech Dark Dashboard
 
-- AMOLED true-black + neon accent theme (cyberpunk aesthetic)
-- Ghost/outline control buttons with hover fill effects
-- 3-section header: logo | status | settings
-- Glow-bordered cards for key UI sections
+- Deep navy-purple dark theme with violet gradient accent
+- Solid modern buttons (no ghost/outline)
+- 2-section header: logo+version left, status+settings right
+- Borderless rounded cards with depth from bg contrast
 - Two-column layout: stats left, live log stream right
 - Animated progress bars with smooth easing
 - ETA calculation for current scan chunk
@@ -32,7 +32,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-VERSION = "4.2.2"
+VERSION = "4.3.0"
 POOL_URL = "https://starnetlive.space"
 APP_NAME = "PuzzlePool"
 
@@ -111,48 +111,46 @@ DGREY = "dim"
 PURPLE = "purple"
 
 
-THEMES = {
-    "dark": {
-        "bg": "#000000", "card": "#0a0a0f", "card_alt": "#0d0d14",
-        "card_border": "#1a1a2e", "header": "#050510",
-        "accent": "#f7931a", "gold": "#ffd700", "green": "#00ff88",
-        "red": "#ff3355", "yellow": "#ffee00", "cyan": "#00ffff",
-        "blue": "#448aff", "purple": "#cc66ff",
-        "text": "#e0e0e8", "dim": "#555570", "vdim": "#2a2a3e",
-        "input_bg": "#0a0a14", "log_bg": "#000000",
-        "progress_bg": "#0f0f1a",
-        "glow": "#00ffff", "btn_border": "#1a1a2e",
-    },
-    "light": {
-        "bg": "#f2f4f8", "card": "#ffffff", "card_alt": "#f5f7fb",
-        "card_border": "#d0d4e0", "header": "#eaecf2",
-        "accent": "#e07a10", "gold": "#b8860b", "green": "#2e7d32",
-        "red": "#c62828", "yellow": "#f57f17", "cyan": "#00838f",
-        "blue": "#1565c0", "purple": "#6a1b9a",
-        "text": "#1a1a2e", "dim": "#7a7a90", "vdim": "#b0b0c0",
-        "input_bg": "#f0f2f8", "log_bg": "#fafcfe",
-        "progress_bg": "#e0e2e8",
-        "glow": "#00838f", "btn_border": "#c0c4d0",
-    },
+THEME = {
+    "bg":           "#0F0F1A",
+    "card":         "#1A1A2E",
+    "card_alt":     "#1E1E35",
+    "card_border":  "#2A2A44",
+    "header":       "#141428",
+    "accent":       "#7C3AED",
+    "accent_light": "#A855F7",
+    "green":        "#10B981",
+    "red":          "#EF4444",
+    "yellow":       "#F59E0B",
+    "cyan":         "#06B6D4",
+    "blue":         "#3B82F6",
+    "purple":       "#A855F7",
+    "gold":         "#F59E0B",
+    "text":         "#F1F5F9",
+    "dim":          "#94A3B8",
+    "vdim":         "#475569",
+    "input_bg":     "#1E1E35",
+    "log_bg":       "#0A0A14",
+    "progress_bg":  "#1E1E35",
+    "btn_hover":    "#252542",
 }
 
 
 class CLR:
-    """Compatibility shim — references dark theme defaults."""
-    BG     = THEMES["dark"]["bg"]
-    CARD   = THEMES["dark"]["card"]
-    ACCENT = THEMES["dark"]["accent"]
-    GOLD   = THEMES["dark"]["gold"]
-    GREEN  = THEMES["dark"]["green"]
-    RED    = THEMES["dark"]["red"]
-    YELLOW = THEMES["dark"]["yellow"]
-    CYAN   = THEMES["dark"]["cyan"]
-    BLUE   = THEMES["dark"]["blue"]
-    PURPLE = THEMES["dark"]["purple"]
-    TEXT   = THEMES["dark"]["text"]
-    DIM    = THEMES["dark"]["dim"]
-    VDIM   = THEMES["dark"]["vdim"]
-    GLOW   = THEMES["dark"]["glow"]
+    """Compatibility shim — references theme defaults."""
+    BG     = THEME["bg"]
+    CARD   = THEME["card"]
+    ACCENT = THEME["accent"]
+    GOLD   = THEME["gold"]
+    GREEN  = THEME["green"]
+    RED    = THEME["red"]
+    YELLOW = THEME["yellow"]
+    CYAN   = THEME["cyan"]
+    BLUE   = THEME["blue"]
+    PURPLE = THEME["purple"]
+    TEXT   = THEME["text"]
+    DIM    = THEME["dim"]
+    VDIM   = THEME["vdim"]
 
 
 def _make_icon_image(size=256):
@@ -782,7 +780,7 @@ def _save_config(data):
 class SettingsDialog:
     def __init__(self, parent, current_config, on_save, theme=None):
         self._on_save = on_save
-        self.t = theme or THEMES["dark"]
+        self.t = theme or THEME
         self.win = ctk.CTkToplevel(parent)
         self.win.withdraw()
         self.win.title("Settings")
@@ -793,11 +791,10 @@ class SettingsDialog:
         self.win.protocol("WM_DELETE_WINDOW", self._close)
 
         ctk.CTkLabel(self.win, text="Worker Settings", font=("", 20, "bold"),
-                     text_color=self.t["accent"]).pack(pady=(20, 15))
+                     text_color=self.t["accent_light"]).pack(pady=(20, 15))
 
         form = ctk.CTkFrame(self.win, fg_color=self.t["card"],
-                            border_color=self.t["card_border"], border_width=1,
-                            corner_radius=12)
+                            corner_radius=16, border_width=0)
         form.pack(fill="x", padx=20, pady=(0, 10))
 
         self._fields = {}
@@ -821,12 +818,12 @@ class SettingsDialog:
         btn_frame = ctk.CTkFrame(self.win, fg_color="transparent")
         btn_frame.pack(fill="x", padx=20, pady=(10, 20))
         ctk.CTkButton(btn_frame, text="Save", width=120, height=38,
-                      fg_color=self.t["green"], hover_color="#00c853",
-                      text_color="#000", font=("", 13, "bold"), corner_radius=10,
+                      fg_color=self.t["green"], hover_color="#059669",
+                      text_color="#fff", font=("", 13, "bold"), corner_radius=10,
                       command=self._save).pack(side="right", padx=(8, 0))
         ctk.CTkButton(btn_frame, text="Cancel", width=100, height=38,
-                      fg_color=self.t["vdim"], hover_color=self.t["dim"],
-                      text_color=self.t["text"], font=("", 13), corner_radius=10,
+                      fg_color=self.t["btn_hover"], hover_color=self.t["card_border"],
+                      text_color=self.t["dim"], font=("", 13), corner_radius=10,
                       command=self._close).pack(side="right")
 
         self.win.update_idletasks()
@@ -846,14 +843,14 @@ class SettingsDialog:
         if kind == "entry":
             var = ctk.StringVar(value=default)
             ctk.CTkEntry(row, textvariable=var, width=210, height=32,
-                         fg_color=self.t["input_bg"], border_color=self.t["vdim"],
+                         fg_color=self.t["input_bg"], border_color=self.t["card_border"],
                          text_color=self.t["text"], corner_radius=8).pack(side="right")
             self._fields[key] = var
         elif kind == "dropdown":
             var = ctk.StringVar(value=default)
             ctk.CTkOptionMenu(row, variable=var, values=options, width=210, height=32,
                               fg_color=self.t["input_bg"], button_color=self.t["accent"],
-                              button_hover_color="#e67e00",
+                              button_hover_color=self.t["accent_light"],
                               dropdown_fg_color=self.t["card"],
                               text_color=self.t["text"],
                               corner_radius=8).pack(side="right")
@@ -894,10 +891,8 @@ class WorkerGUI:
         self._worker_stop = None
         self._worker_ref = None
 
-        # Theme
-        cfg = _load_config()
-        self.theme_name = cfg.get("theme", "dark")
-        self.theme = THEMES.get(self.theme_name, THEMES["dark"])
+        # Theme (single dark palette)
+        self.theme = THEME
         self.TAG_MAP = {
             "green": self.theme["green"], "red": self.theme["red"],
             "yellow": self.theme["yellow"], "gold": self.theme["gold"],
@@ -1006,7 +1001,7 @@ class WorkerGUI:
         ctk.CTkLabel(self._inst, text="\u29c9", font=("", 72, "bold"),
                      text_color=t["accent"]).pack()
         ctk.CTkLabel(self._inst, text="Puzzle Pool Worker",
-                     font=("", 28, "bold"), text_color=t["accent"]).pack(pady=(12, 5))
+                     font=("", 28, "bold"), text_color=t["accent_light"]).pack(pady=(12, 5))
         ctk.CTkLabel(self._inst, text=f"v{VERSION}", font=("", 13),
                      text_color=t["dim"]).pack()
         self._lbl_inst = ctk.CTkLabel(self._inst, text="Initializing...",
@@ -1014,7 +1009,7 @@ class WorkerGUI:
         self._lbl_inst.pack(pady=(50, 12))
         self._pb_inst = ctk.CTkProgressBar(self._inst, width=440, height=20,
                                             progress_color=t["accent"],
-                                            fg_color=t["progress_bg"], corner_radius=8)
+                                            fg_color=t["progress_bg"], corner_radius=10)
         self._pb_inst.pack()
         self._pb_inst.set(0)
         self._lbl_inst2 = ctk.CTkLabel(self._inst, text="", font=("", 11),
@@ -1048,124 +1043,90 @@ class WorkerGUI:
 
     # ────────── Main screen (two-column layout) ──────────
 
-    def _card(self, parent, alt=False, glow=False, **kw):
-        """Create a card frame. glow=True uses neon border."""
+    def _card(self, parent, **kw):
         t = self.theme
-        border_clr = t["glow"] if glow else t["card_border"]
-        frame = ctk.CTkFrame(parent, fg_color=t["card_alt" if alt else "card"],
-                             border_color=border_clr, border_width=1,
-                             corner_radius=12, **kw)
-        if glow:
-            self._themed_glow_cards.append(frame)
-        elif alt:
-            self._themed_cards_alt.append(frame)
-        else:
-            self._themed_cards.append(frame)
+        frame = ctk.CTkFrame(parent, fg_color=t["card"],
+                             corner_radius=16, border_width=0, **kw)
+        self._themed_cards.append(frame)
         return frame
 
     def _build_main_screen(self):
         t = self.theme
         # Theme tracking lists
         self._themed_cards = []
-        self._themed_cards_alt = []
-        self._themed_glow_cards = []
         self._themed_dim_labels = []
-        self._themed_gold_labels = []
+        self._themed_section_labels = []
 
         self._main_frame = ctk.CTkFrame(self.root, fg_color="transparent")
         self._main_frame.pack(fill="both", expand=True)
         m = self._main_frame
 
-        # ── Header (3-section) ──
-        hdr = ctk.CTkFrame(m, fg_color=t["header"], corner_radius=12,
-                           border_color=t["glow"], border_width=1, height=56)
+        # ── Header (2-section) ──
+        hdr = ctk.CTkFrame(m, fg_color=t["header"], corner_radius=16,
+                           border_width=0, height=52)
         self._header_frame = hdr
         hdr.pack(fill="x", padx=10, pady=(8, 6))
         hdr.pack_propagate(False)
 
-        # Left: logo + title
+        # Left: logo + title + version pill
         hdr_left = ctk.CTkFrame(hdr, fg_color="transparent")
         hdr_left.pack(side="left", padx=(14, 0))
         self._lbl_btc = ctk.CTkLabel(hdr_left, text="\u29c9", font=("", 24, "bold"),
                                       text_color=t["accent"])
         self._lbl_btc.pack(side="left", padx=(0, 8))
         self._lbl_title = ctk.CTkLabel(hdr_left, text="PUZZLE POOL",
-                     font=("", 17, "bold"), text_color=t["accent"])
+                     font=("", 17, "bold"), text_color=t["text"])
         self._lbl_title.pack(side="left")
-
-        # Center: version badge + status dot + status text
-        hdr_center = ctk.CTkFrame(hdr, fg_color="transparent")
-        hdr_center.pack(side="left", fill="x", expand=True, padx=16)
-        self._vbadge = ctk.CTkFrame(hdr_center, fg_color=t["accent"], corner_radius=6,
+        self._vbadge = ctk.CTkFrame(hdr_left, fg_color=t["accent"], corner_radius=6,
                               width=56, height=22)
-        self._vbadge.pack(side="left")
+        self._vbadge.pack(side="left", padx=(10, 0))
         self._vbadge.pack_propagate(False)
         ctk.CTkLabel(self._vbadge, text=f"v{VERSION}", font=("", 9, "bold"),
-                     text_color="#000").pack(expand=True)
-        self._lbl_hdr_dot = ctk.CTkLabel(hdr_center, text="\u25cf", font=("", 14),
-                                          text_color=t["yellow"])
-        self._lbl_hdr_dot.pack(side="left", padx=(12, 4))
-        self._lbl_hdr_status = ctk.CTkLabel(hdr_center, text="STARTING",
-                                             font=("", 13, "bold"), text_color=t["yellow"])
-        self._lbl_hdr_status.pack(side="left")
+                     text_color="#fff").pack(expand=True)
 
-        # Right: theme toggle + settings (ghost buttons)
+        # Right: status dot + status label + settings button
         hdr_right = ctk.CTkFrame(hdr, fg_color="transparent")
         hdr_right.pack(side="right", padx=(0, 14))
-        theme_icon = "\u263e" if self.theme_name == "dark" else "\u2600"
-        self._btn_theme = ctk.CTkButton(
-            hdr_right, text=theme_icon, width=36, height=36,
-            fg_color="transparent", hover_color=t["card"],
-            border_width=1, border_color=t["glow"],
-            text_color=t["glow"], font=("", 18), corner_radius=10,
-            command=self._toggle_theme)
-        self._btn_theme.pack(side="left", padx=(0, 6))
         self._btn_settings = ctk.CTkButton(
             hdr_right, text="\u2699", width=36, height=36,
-            fg_color="transparent", hover_color=t["card"],
-            border_width=1, border_color=t["glow"],
-            text_color=t["glow"], font=("", 18), corner_radius=10,
-            command=self._on_settings)
-        self._btn_settings.pack(side="left")
+            fg_color=t["btn_hover"], hover_color=t["card_border"],
+            border_width=0, text_color=t["dim"], font=("", 18),
+            corner_radius=10, command=self._on_settings)
+        self._btn_settings.pack(side="right")
+        self._lbl_hdr_status = ctk.CTkLabel(hdr_right, text="STARTING",
+                                             font=("", 13, "bold"), text_color=t["yellow"])
+        self._lbl_hdr_status.pack(side="right", padx=(4, 12))
+        self._lbl_hdr_dot = ctk.CTkLabel(hdr_right, text="\u25cf", font=("", 14),
+                                          text_color=t["yellow"])
+        self._lbl_hdr_dot.pack(side="right")
 
         # ── Controls Bar ──
-        ctrl = self._card(m, glow=True)
+        ctrl = self._card(m)
         ctrl.pack(fill="x", padx=10, pady=(0, 5))
         ci = ctk.CTkFrame(ctrl, fg_color="transparent")
         ci.pack(fill="x", padx=14, pady=8)
 
-        # Ghost button group with glow border
-        self._btn_group = ctk.CTkFrame(ci, fg_color="transparent",
-                                        border_color=t["glow"], border_width=1,
-                                        corner_radius=10)
-        self._btn_group.pack(side="left", padx=(0, 16))
-        bg = self._btn_group
-
+        # Solid buttons
         self._btn_start = ctk.CTkButton(
-            bg, text="\u25b8 START", width=105, height=36,
-            fg_color="transparent", hover_color=t["green"],
-            border_width=2, border_color=t["green"],
-            text_color=t["green"], font=("", 13, "bold"), corner_radius=8,
-            command=self._on_start)
-        self._btn_start.pack(side="left", padx=(4, 2), pady=4)
-        self._btn_start.bind("<Enter>", lambda e: self._ghost_hover(self._btn_start, t["green"], True))
-        self._btn_start.bind("<Leave>", lambda e: self._ghost_hover(self._btn_start, t["green"], False))
+            ci, text="Start", width=110, height=38,
+            fg_color=t["accent"], hover_color=t["accent_light"],
+            border_width=0, text_color="#fff", font=("", 13, "bold"),
+            corner_radius=10, command=self._on_start)
+        self._btn_start.pack(side="left", padx=(0, 6))
 
         self._btn_pause = ctk.CTkButton(
-            bg, text="\u23f8 PAUSE", width=105, height=36,
-            fg_color="transparent", hover_color=t["yellow"],
-            border_width=2, border_color=t["dim"],
-            text_color=t["dim"], font=("", 13, "bold"), corner_radius=8,
-            command=self._on_pause, state="disabled")
-        self._btn_pause.pack(side="left", padx=2, pady=4)
+            ci, text="Pause", width=110, height=38,
+            fg_color=t["card_alt"], hover_color=t["card_border"],
+            border_width=0, text_color=t["vdim"], font=("", 13, "bold"),
+            corner_radius=10, command=self._on_pause, state="disabled")
+        self._btn_pause.pack(side="left", padx=(0, 6))
 
         self._btn_stop = ctk.CTkButton(
-            bg, text="\u25a0 STOP", width=105, height=36,
-            fg_color="transparent", hover_color=t["red"],
-            border_width=2, border_color=t["dim"],
-            text_color=t["dim"], font=("", 13, "bold"), corner_radius=8,
-            command=self._on_stop, state="disabled")
-        self._btn_stop.pack(side="left", padx=(2, 4), pady=4)
+            ci, text="Stop", width=110, height=38,
+            fg_color=t["card_alt"], hover_color=t["card_border"],
+            border_width=0, text_color=t["vdim"], font=("", 13, "bold"),
+            corner_radius=10, command=self._on_stop, state="disabled")
+        self._btn_stop.pack(side="left", padx=(0, 16))
 
         _lbl = ctk.CTkLabel(ci, text="Mode:", font=("", 11), text_color=t["dim"])
         _lbl.pack(side="left", padx=(0, 4))
@@ -1176,7 +1137,7 @@ class WorkerGUI:
         self._dd_mode = ctk.CTkOptionMenu(
             ci, variable=self._var_mode, values=["Normal", "Eco"],
             width=95, height=30, fg_color=t["input_bg"],
-            button_color=t["accent"], button_hover_color="#e67e00",
+            button_color=t["accent"], button_hover_color=t["accent_light"],
             dropdown_fg_color=t["card"], text_color=t["text"],
             corner_radius=8, command=self._on_mode_change)
         self._dd_mode.pack(side="left", padx=(0, 12))
@@ -1189,7 +1150,7 @@ class WorkerGUI:
         self._dd_device = ctk.CTkOptionMenu(
             ci, variable=self._var_device, values=["GPU", "CPU", "CPU+GPU"],
             width=105, height=30, fg_color=t["input_bg"],
-            button_color=t["accent"], button_hover_color="#e67e00",
+            button_color=t["accent"], button_hover_color=t["accent_light"],
             dropdown_fg_color=t["card"], text_color=t["text"],
             corner_radius=8, command=self._on_device_change)
         self._dd_device.pack(side="left")
@@ -1208,21 +1169,18 @@ class WorkerGUI:
 
         pad_card = {"padx": 0, "pady": (0, 5)}
 
-        # ── LEFT: Status card ──
+        # ── LEFT: Status card (worker, pool, gpu — no status dot) ──
         sc = self._card(left)
         sc.pack(fill="x", **pad_card)
         si = ctk.CTkFrame(sc, fg_color="transparent")
         si.pack(fill="x", padx=14, pady=10)
         r1 = ctk.CTkFrame(si, fg_color="transparent")
         r1.pack(fill="x")
-        _lbl = ctk.CTkLabel(r1, text="STATUS", font=("", 12), text_color=t["dim"])
+        _lbl = ctk.CTkLabel(r1, text="WORKER", font=("", 12), text_color=t["dim"])
         _lbl.pack(side="left")
         self._themed_dim_labels.append(_lbl)
-        self._lbl_dot = ctk.CTkLabel(r1, text="\u25cf", font=("", 16), text_color=t["yellow"])
-        self._lbl_dot.pack(side="left", padx=(10, 4))
-        self._lbl_status = ctk.CTkLabel(r1, text="STARTING", font=("", 14, "bold"),
-                                         text_color=t["yellow"])
-        self._lbl_status.pack(side="left")
+        self._lbl_worker = ctk.CTkLabel(r1, text="...", font=("", 12, "bold"), text_color=t["accent_light"])
+        self._lbl_worker.pack(side="left", padx=(6, 0))
         _lbl = ctk.CTkLabel(r1, text="POOL", font=("", 12), text_color=t["dim"])
         _lbl.pack(side="left", padx=(32, 6))
         self._themed_dim_labels.append(_lbl)
@@ -1231,25 +1189,20 @@ class WorkerGUI:
         self._lbl_pool.pack(side="left")
         r2 = ctk.CTkFrame(si, fg_color="transparent")
         r2.pack(fill="x", pady=(5, 0))
-        _lbl = ctk.CTkLabel(r2, text="WORKER", font=("", 12), text_color=t["dim"])
+        _lbl = ctk.CTkLabel(r2, text="GPU", font=("", 12), text_color=t["dim"])
         _lbl.pack(side="left")
         self._themed_dim_labels.append(_lbl)
-        self._lbl_worker = ctk.CTkLabel(r2, text="...", font=("", 12, "bold"), text_color=t["cyan"])
-        self._lbl_worker.pack(side="left", padx=(6, 0))
-        _lbl = ctk.CTkLabel(r2, text="GPU", font=("", 12), text_color=t["dim"])
-        _lbl.pack(side="left", padx=(32, 6))
-        self._themed_dim_labels.append(_lbl)
         self._lbl_gpu = ctk.CTkLabel(r2, text="Detecting...", font=("", 12, "bold"), text_color=t["green"])
-        self._lbl_gpu.pack(side="left")
+        self._lbl_gpu.pack(side="left", padx=(6, 0))
 
         # ── LEFT: Current Scan card ──
-        scan = self._card(left, glow=True)
+        scan = self._card(left)
         scan.pack(fill="x", **pad_card)
         si2 = ctk.CTkFrame(scan, fg_color="transparent")
         si2.pack(fill="x", padx=14, pady=10)
-        _lbl = ctk.CTkLabel(si2, text="CURRENT SCAN", font=("", 14, "bold"), text_color=t["gold"])
+        _lbl = ctk.CTkLabel(si2, text="CURRENT SCAN", font=("", 13, "bold"), text_color=t["accent_light"])
         _lbl.pack(anchor="w")
-        self._themed_gold_labels.append(_lbl)
+        self._themed_section_labels.append(_lbl)
         self._lbl_chunk = ctk.CTkLabel(si2, text="Waiting for work...",
                                         font=("", 13, "bold"), text_color=t["dim"])
         self._lbl_chunk.pack(anchor="w", pady=(6, 0))
@@ -1259,11 +1212,11 @@ class WorkerGUI:
         pb = ctk.CTkFrame(si2, fg_color="transparent")
         pb.pack(fill="x", pady=(8, 0))
         self._pb_scan = ctk.CTkProgressBar(pb, height=22, progress_color=t["accent"],
-                                            fg_color=t["progress_bg"], corner_radius=8)
+                                            fg_color=t["progress_bg"], corner_radius=10)
         self._pb_scan.pack(side="left", fill="x", expand=True)
         self._pb_scan.set(0)
         self._lbl_pct = ctk.CTkLabel(pb, text="0.0%", font=("", 13, "bold"),
-                                      text_color=t["accent"], width=70)
+                                      text_color=t["accent_light"], width=70)
         self._lbl_pct.pack(side="right", padx=(10, 0))
 
         # Speed + heartbeat + ETA row
@@ -1312,9 +1265,9 @@ class WorkerGUI:
         ms_card.grid(row=0, column=0, sticky="nsew", padx=(0, 3))
         msi = ctk.CTkFrame(ms_card, fg_color="transparent")
         msi.pack(fill="x", padx=12, pady=10)
-        _lbl = ctk.CTkLabel(msi, text="MY STATS", font=("", 14, "bold"), text_color=t["gold"])
+        _lbl = ctk.CTkLabel(msi, text="MY STATS", font=("", 13, "bold"), text_color=t["accent_light"])
         _lbl.pack(anchor="w")
-        self._themed_gold_labels.append(_lbl)
+        self._themed_section_labels.append(_lbl)
         self._sv = {}
         for k, lb in [("chunks", "Chunks"), ("keys", "Keys"), ("speed", "Speed"), ("uptime", "Uptime")]:
             row = ctk.CTkFrame(msi, fg_color="transparent")
@@ -1332,9 +1285,9 @@ class WorkerGUI:
         sys_card.grid(row=0, column=1, sticky="nsew", padx=(3, 0))
         syi = ctk.CTkFrame(sys_card, fg_color="transparent")
         syi.pack(fill="x", padx=12, pady=10)
-        _lbl = ctk.CTkLabel(syi, text="SYSTEM", font=("", 14, "bold"), text_color=t["gold"])
+        _lbl = ctk.CTkLabel(syi, text="SYSTEM", font=("", 13, "bold"), text_color=t["accent_light"])
         _lbl.pack(anchor="w")
-        self._themed_gold_labels.append(_lbl)
+        self._themed_section_labels.append(_lbl)
         for k, lb in [("gpu", "GPU"), ("vram", "VRAM"), ("cpu", "CPU"), ("ram", "RAM")]:
             row = ctk.CTkFrame(syi, fg_color="transparent")
             row.pack(anchor="w", fill="x", pady=2)
@@ -1351,9 +1304,9 @@ class WorkerGUI:
         pf.pack(fill="both", expand=True, **pad_card)
         si4 = ctk.CTkFrame(pf, fg_color="transparent")
         si4.pack(fill="x", padx=14, pady=10)
-        _lbl = ctk.CTkLabel(si4, text="POOL NETWORK", font=("", 14, "bold"), text_color=t["gold"])
+        _lbl = ctk.CTkLabel(si4, text="POOL NETWORK", font=("", 13, "bold"), text_color=t["accent_light"])
         _lbl.pack(anchor="w")
-        self._themed_gold_labels.append(_lbl)
+        self._themed_section_labels.append(_lbl)
         pr = ctk.CTkFrame(si4, fg_color="transparent")
         pr.pack(fill="x", pady=(4, 0))
         for k, lb in [("p_workers", "Workers"), ("p_speed", "Speed"), ("p_eta", "ETA")]:
@@ -1366,7 +1319,7 @@ class WorkerGUI:
         ppb = ctk.CTkFrame(si4, fg_color="transparent")
         ppb.pack(fill="x", pady=(6, 0))
         self._pb_pool = ctk.CTkProgressBar(ppb, height=18, progress_color=t["green"],
-                                            fg_color=t["progress_bg"], corner_radius=6)
+                                            fg_color=t["progress_bg"], corner_radius=10)
         self._pb_pool.pack(side="left", fill="x", expand=True)
         self._pb_pool.set(0)
         self._lbl_ppct = ctk.CTkLabel(ppb, text="0.000000%", font=("", 12, "bold"),
@@ -1390,10 +1343,10 @@ class WorkerGUI:
         # ── RIGHT: Live Stream log ──
         log_card = self._card(right_col)
         log_card.pack(fill="both", expand=True, pady=(0, 5))
-        _lbl = ctk.CTkLabel(log_card, text="LIVE STREAM", font=("", 14, "bold"),
-                            text_color=t["gold"])
+        _lbl = ctk.CTkLabel(log_card, text="LIVE STREAM", font=("", 13, "bold"),
+                            text_color=t["accent_light"])
         _lbl.pack(anchor="w", padx=14, pady=(10, 0))
-        self._themed_gold_labels.append(_lbl)
+        self._themed_section_labels.append(_lbl)
         mono = "Consolas" if IS_WIN else "monospace"
         self._lb = ctk.CTkTextbox(log_card, font=(mono, 11), fg_color=t["log_bg"],
                                    text_color=t["dim"], corner_radius=8, state="disabled")
@@ -1416,84 +1369,39 @@ class WorkerGUI:
         ft = ctk.CTkFrame(m, fg_color="transparent", height=28)
         ft.pack(fill="x", padx=10, pady=(0, 4))
         _lbl = ctk.CTkLabel(ft, text="Close = minimize to tray", font=("", 11),
-                            text_color=t["dim"])
+                            text_color=t["vdim"])
         _lbl.pack(side="right")
         self._themed_dim_labels.append(_lbl)
 
-    # ────────── Theme toggle ──────────
-
-    def _toggle_theme(self):
-        self.theme_name = "light" if self.theme_name == "dark" else "dark"
-        self.theme = THEMES[self.theme_name]
-        self.TAG_MAP = {
-            "green": self.theme["green"], "red": self.theme["red"],
-            "yellow": self.theme["yellow"], "gold": self.theme["gold"],
-            "cyan": self.theme["cyan"], "blue": self.theme["blue"],
-            "purple": self.theme["purple"], "dim": self.theme["dim"],
-            "default": self.theme["text"],
-        }
-        _save_config({"theme": self.theme_name})
-        ctk.set_appearance_mode("light" if self.theme_name == "light" else "dark")
-        self._prev.clear()  # force _refresh to re-apply all values with new colors
-        self._apply_theme()
-        self.log(f"Theme: {self.theme_name}", CYAN)
+    # ────────── Theme apply (dark-only) ──────────
 
     def _apply_theme(self):
-        """Update all widget colors in-place — no destroy/rebuild."""
+        """Update all widget colors in-place — dark-only simplification."""
         t = self.theme
         self.root.configure(fg_color=t["bg"])
 
         # Update all tracked card frames
         for frame in self._themed_cards:
             try:
-                frame.configure(fg_color=t["card"], border_color=t["card_border"])
-            except Exception:
-                pass
-        for frame in self._themed_cards_alt:
-            try:
-                frame.configure(fg_color=t["card_alt"], border_color=t["card_border"])
-            except Exception:
-                pass
-        for frame in self._themed_glow_cards:
-            try:
-                frame.configure(fg_color=t["card"], border_color=t["glow"])
+                frame.configure(fg_color=t["card"])
             except Exception:
                 pass
 
-        # Header (glow border)
+        # Header
         try:
-            self._header_frame.configure(fg_color=t["header"], border_color=t["glow"])
+            self._header_frame.configure(fg_color=t["header"])
         except Exception:
             pass
-        # Header title + status
         try:
-            self._lbl_title.configure(text_color=t["accent"])
+            self._lbl_title.configure(text_color=t["text"])
             self._lbl_btc.configure(text_color=t["accent"])
         except Exception:
             pass
 
-        # Theme + settings ghost buttons
-        self._btn_theme.configure(
-            text="\u263e" if self.theme_name == "dark" else "\u2600",
-            fg_color="transparent", hover_color=t["card"],
-            border_color=t["glow"], text_color=t["glow"])
+        # Settings button
         self._btn_settings.configure(
-            fg_color="transparent", hover_color=t["card"],
-            border_color=t["glow"], text_color=t["glow"])
-
-        # Button group glow border
-        try:
-            self._btn_group.configure(border_color=t["glow"])
-        except Exception:
-            pass
-
-        # Ghost control buttons — re-apply current state colors
-        # (actual state colors will be set by next _update_ctrl_buttons call via _refresh)
-        for btn in (self._btn_start, self._btn_pause, self._btn_stop):
-            try:
-                btn.configure(fg_color="transparent")
-            except Exception:
-                pass
+            fg_color=t["btn_hover"], hover_color=t["card_border"],
+            text_color=t["dim"])
 
         # Control bar dropdowns
         try:
@@ -1524,15 +1432,15 @@ class WorkerGUI:
         self._log_flushed_count = 0
         self._flush_log()
 
-        # Update all dim labels and themed labels
+        # Update all dim labels and section labels
         for lbl in self._themed_dim_labels:
             try:
                 lbl.configure(text_color=t["dim"])
             except Exception:
                 pass
-        for lbl in self._themed_gold_labels:
+        for lbl in self._themed_section_labels:
             try:
-                lbl.configure(text_color=t["gold"])
+                lbl.configure(text_color=t["accent_light"])
             except Exception:
                 pass
 
@@ -1573,15 +1481,6 @@ class WorkerGUI:
 
     # ────────── Control handlers ──────────
 
-    def _ghost_hover(self, btn, color, entering):
-        """Swap text color on ghost button hover for contrast."""
-        if str(btn.cget("state")) == "disabled":
-            return
-        if entering:
-            btn.configure(text_color="#000000")
-        else:
-            btn.configure(text_color=color)
-
     def _on_start(self):
         if self._worker_ref:
             self._worker_ref._user_state = "running"
@@ -1604,36 +1503,34 @@ class WorkerGUI:
     def _update_ctrl_buttons(self, state):
         t = self.theme
         if state == "running":
+            # Start=disabled, Pause=amber solid, Stop=red solid
             self._btn_start.configure(state="disabled",
-                text_color=t["dim"], border_color=t["vdim"])
+                fg_color=t["card_alt"], text_color=t["vdim"])
             self._btn_pause.configure(state="normal",
-                text_color=t["yellow"], border_color=t["yellow"])
-            self._btn_pause.bind("<Enter>", lambda e: self._ghost_hover(self._btn_pause, t["yellow"], True))
-            self._btn_pause.bind("<Leave>", lambda e: self._ghost_hover(self._btn_pause, t["yellow"], False))
+                fg_color=t["yellow"], hover_color="#D97706",
+                text_color="#000")
             self._btn_stop.configure(state="normal",
-                text_color=t["red"], border_color=t["red"])
-            self._btn_stop.bind("<Enter>", lambda e: self._ghost_hover(self._btn_stop, t["red"], True))
-            self._btn_stop.bind("<Leave>", lambda e: self._ghost_hover(self._btn_stop, t["red"], False))
+                fg_color=t["red"], hover_color="#DC2626",
+                text_color="#fff")
         elif state == "paused":
-            self._btn_start.configure(state="normal", text="\u25b8 RESUME",
-                text_color=t["green"], border_color=t["green"])
-            self._btn_start.bind("<Enter>", lambda e: self._ghost_hover(self._btn_start, t["green"], True))
-            self._btn_start.bind("<Leave>", lambda e: self._ghost_hover(self._btn_start, t["green"], False))
+            # Start(Resume)=violet solid, Pause=disabled, Stop=red solid
+            self._btn_start.configure(state="normal", text="Resume",
+                fg_color=t["accent"], hover_color=t["accent_light"],
+                text_color="#fff")
             self._btn_pause.configure(state="disabled",
-                text_color=t["dim"], border_color=t["vdim"])
+                fg_color=t["card_alt"], text_color=t["vdim"])
             self._btn_stop.configure(state="normal",
-                text_color=t["red"], border_color=t["red"])
-            self._btn_stop.bind("<Enter>", lambda e: self._ghost_hover(self._btn_stop, t["red"], True))
-            self._btn_stop.bind("<Leave>", lambda e: self._ghost_hover(self._btn_stop, t["red"], False))
+                fg_color=t["red"], hover_color="#DC2626",
+                text_color="#fff")
         elif state in ("stopped", "idle"):
-            self._btn_start.configure(state="normal", text="\u25b8 START",
-                text_color=t["green"], border_color=t["green"])
-            self._btn_start.bind("<Enter>", lambda e: self._ghost_hover(self._btn_start, t["green"], True))
-            self._btn_start.bind("<Leave>", lambda e: self._ghost_hover(self._btn_start, t["green"], False))
+            # Start=violet solid, Pause=disabled, Stop=disabled
+            self._btn_start.configure(state="normal", text="Start",
+                fg_color=t["accent"], hover_color=t["accent_light"],
+                text_color="#fff")
             self._btn_pause.configure(state="disabled",
-                text_color=t["dim"], border_color=t["vdim"])
+                fg_color=t["card_alt"], text_color=t["vdim"])
             self._btn_stop.configure(state="disabled",
-                text_color=t["dim"], border_color=t["vdim"])
+                fg_color=t["card_alt"], text_color=t["vdim"])
 
     def _on_mode_change(self, value):
         mode_rmap = {"Normal": "normal", "Eco": "eco"}
@@ -1778,14 +1675,14 @@ class WorkerGUI:
         t = self.theme
         hx = self.TAG_MAP.get(self.status_color, t["text"])
 
+        # Header status
         if self._chg("status", (self.status, hx)):
-            self._lbl_status.configure(text=self.status, text_color=hx)
             self._lbl_hdr_status.configure(text=self.status, text_color=hx)
         show = self._tick % 4 < 3 or self.status != "SCANNING"
-        dot_clr = hx if show else t["card"]
+        dot_clr = hx if show else t["header"]
         if self._chg("dot", dot_clr):
-            self._lbl_dot.configure(text_color=dot_clr)
             self._lbl_hdr_dot.configure(text_color=dot_clr)
+
         wn = self.worker_name or "..."
         if self._chg("worker", wn):
             self._lbl_worker.configure(text=wn)
@@ -1796,7 +1693,7 @@ class WorkerGUI:
         cc = self.current_chunk
         if self._chg("chunk", cc):
             if cc is not None:
-                self._lbl_chunk.configure(text=f"Chunk #{cc:,}", text_color=t["accent"])
+                self._lbl_chunk.configure(text=f"Chunk #{cc:,}", text_color=t["accent_light"])
             else:
                 self._lbl_chunk.configure(text="Waiting for work...", text_color=t["dim"])
 
