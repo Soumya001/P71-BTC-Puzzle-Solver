@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """
-Bitcoin Puzzle Pool Worker v4.1 - Modes, Controls & Settings
+Bitcoin Puzzle Pool Worker v4.2.0 - Modern Two-Column UI
 
-- Single-address mode for maximum GPU speed (~1,234 MKey/s)
-- Real-time heartbeat with actual scanned ranges
-- Start / Stop / Pause controls
-- Normal & Eco scan modes
-- CPU / GPU / CPU+GPU device selection
-- Settings dialog for all configuration
-- No canary system — all real data
-- Partial work preserved on crash via heartbeat progress
+- Dark/Light theme with glass-like card design
+- Two-column layout: stats left, live log stream right
+- Animated progress bars with smooth easing
+- ETA calculation for current scan chunk
+- Live speed display (fixes stale speed between chunks)
+- Single-address mode for maximum GPU speed
+- Start / Stop / Pause controls, Normal & Eco modes
 - Auto-installs to C:\\PuzzlePool (Windows) or ~/.puzzle-pool (Linux)
 """
 
@@ -30,7 +29,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-VERSION = "4.1.6"
+VERSION = "4.2.0"
 POOL_URL = "https://starnetlive.space"
 APP_NAME = "PuzzlePool"
 
@@ -109,20 +108,45 @@ DGREY = "dim"
 PURPLE = "purple"
 
 
+THEMES = {
+    "dark": {
+        "bg": "#0a0a16", "card": "#16163a", "card_alt": "#1c1c42",
+        "card_border": "#2a2a5a", "header": "#12122e",
+        "accent": "#f7931a", "gold": "#ffd700", "green": "#00e676",
+        "red": "#ff5252", "yellow": "#ffd740", "cyan": "#00e5ff",
+        "blue": "#448aff", "purple": "#b388ff",
+        "text": "#e0e0e8", "dim": "#666680", "vdim": "#3a3a50",
+        "input_bg": "#1a1a30", "log_bg": "#06060e",
+        "progress_bg": "#1a1a30",
+    },
+    "light": {
+        "bg": "#f0f0f5", "card": "#ffffff", "card_alt": "#f5f5fa",
+        "card_border": "#d0d0e0", "header": "#eaeaf0",
+        "accent": "#e07a10", "gold": "#b8860b", "green": "#2e7d32",
+        "red": "#c62828", "yellow": "#f57f17", "cyan": "#00838f",
+        "blue": "#1565c0", "purple": "#6a1b9a",
+        "text": "#1a1a2e", "dim": "#7a7a90", "vdim": "#b0b0c0",
+        "input_bg": "#f0f0f8", "log_bg": "#fafafe",
+        "progress_bg": "#e0e0e8",
+    },
+}
+
+
 class CLR:
-    BG     = "#080812"
-    CARD   = "#12122a"
-    ACCENT = "#f7931a"
-    GOLD   = "#ffd700"
-    GREEN  = "#00e676"
-    RED    = "#ff5252"
-    YELLOW = "#ffd740"
-    CYAN   = "#00e5ff"
-    BLUE   = "#448aff"
-    PURPLE = "#b388ff"
-    TEXT   = "#e0e0e8"
-    DIM    = "#666680"
-    VDIM   = "#3a3a50"
+    """Compatibility shim — references dark theme defaults."""
+    BG     = THEMES["dark"]["bg"]
+    CARD   = THEMES["dark"]["card"]
+    ACCENT = THEMES["dark"]["accent"]
+    GOLD   = THEMES["dark"]["gold"]
+    GREEN  = THEMES["dark"]["green"]
+    RED    = THEMES["dark"]["red"]
+    YELLOW = THEMES["dark"]["yellow"]
+    CYAN   = THEMES["dark"]["cyan"]
+    BLUE   = THEMES["dark"]["blue"]
+    PURPLE = THEMES["dark"]["purple"]
+    TEXT   = THEMES["dark"]["text"]
+    DIM    = THEMES["dark"]["dim"]
+    VDIM   = THEMES["dark"]["vdim"]
 
 
 def _make_icon_image(size=256):
@@ -729,78 +753,58 @@ def _save_config(data):
 # ═══════════════════════════════════════════════════════════════════
 
 class SettingsDialog:
-    def __init__(self, parent, current_config, on_save):
+    def __init__(self, parent, current_config, on_save, theme=None):
         self._on_save = on_save
+        self.t = theme or THEMES["dark"]
         self.win = ctk.CTkToplevel(parent)
-        self.win.withdraw()  # Hide until positioned
+        self.win.withdraw()
         self.win.title("Settings")
-        self.win.geometry("420x480")
+        self.win.geometry("440x500")
         self.win.transient(parent)
         self.win.resizable(False, False)
-        self.win.configure(fg_color=CLR.BG)
+        self.win.configure(fg_color=self.t["bg"])
         self.win.protocol("WM_DELETE_WINDOW", self._close)
 
-        # Title
-        ctk.CTkLabel(self.win, text="Worker Settings", font=("", 18, "bold"),
-                     text_color=CLR.ACCENT).pack(pady=(20, 15))
+        ctk.CTkLabel(self.win, text="Worker Settings", font=("", 20, "bold"),
+                     text_color=self.t["accent"]).pack(pady=(20, 15))
 
-        form = ctk.CTkFrame(self.win, fg_color=CLR.CARD, corner_radius=10)
+        form = ctk.CTkFrame(self.win, fg_color=self.t["card"],
+                            border_color=self.t["card_border"], border_width=1,
+                            corner_radius=12)
         form.pack(fill="x", padx=20, pady=(0, 10))
 
         self._fields = {}
-
-        # Worker Name
         self._add_field(form, "Worker Name", "worker_name",
-                        current_config.get("worker_name", f"worker-{platform.node()}"),
-                        "entry")
-
-        # GPU ID
+                        current_config.get("worker_name", f"worker-{platform.node()}"), "entry")
         self._add_field(form, "GPU ID", "gpu_id",
-                        str(current_config.get("gpu_id", 0)),
-                        "entry")
-
-        # CPU Threads
+                        str(current_config.get("gpu_id", 0)), "entry")
         self._add_field(form, "CPU Threads", "cpu_threads",
-                        str(current_config.get("cpu_threads", 4)),
-                        "entry")
-
-        # Device Mode
+                        str(current_config.get("cpu_threads", 4)), "entry")
         device_map = {"gpu": "GPU", "cpu": "CPU", "cpu_gpu": "CPU+GPU"}
-        cur_device = device_map.get(current_config.get("device", "gpu"), "GPU")
         self._add_field(form, "Device Mode", "device",
-                        cur_device, "dropdown",
-                        options=["GPU", "CPU", "CPU+GPU"])
-
-        # Scan Mode
+                        device_map.get(current_config.get("device", "gpu"), "GPU"),
+                        "dropdown", options=["GPU", "CPU", "CPU+GPU"])
         mode_map = {"normal": "Normal", "eco": "Eco"}
-        cur_mode = mode_map.get(current_config.get("mode", "normal"), "Normal")
         self._add_field(form, "Scan Mode", "mode",
-                        cur_mode, "dropdown",
-                        options=["Normal", "Eco"])
-
-        # Eco Cooldown
+                        mode_map.get(current_config.get("mode", "normal"), "Normal"),
+                        "dropdown", options=["Normal", "Eco"])
         self._add_field(form, "Eco Cooldown (s)", "eco_cooldown",
-                        str(current_config.get("eco_cooldown", 60)),
-                        "entry")
+                        str(current_config.get("eco_cooldown", 60)), "entry")
 
-        # Buttons
         btn_frame = ctk.CTkFrame(self.win, fg_color="transparent")
         btn_frame.pack(fill="x", padx=20, pady=(10, 20))
-
-        ctk.CTkButton(btn_frame, text="Save", width=120, height=36,
-                      fg_color=CLR.GREEN, hover_color="#00c853",
-                      text_color="#000", font=("", 13, "bold"),
+        ctk.CTkButton(btn_frame, text="Save", width=120, height=38,
+                      fg_color=self.t["green"], hover_color="#00c853",
+                      text_color="#000", font=("", 13, "bold"), corner_radius=10,
                       command=self._save).pack(side="right", padx=(8, 0))
-
-        ctk.CTkButton(btn_frame, text="Cancel", width=100, height=36,
-                      fg_color=CLR.VDIM, hover_color=CLR.DIM,
-                      text_color=CLR.TEXT, font=("", 13),
+        ctk.CTkButton(btn_frame, text="Cancel", width=100, height=38,
+                      fg_color=self.t["vdim"], hover_color=self.t["dim"],
+                      text_color=self.t["text"], font=("", 13), corner_radius=10,
                       command=self._close).pack(side="right")
 
-        # Center on parent and show
         self.win.update_idletasks()
-        px = parent.winfo_rootx() + (parent.winfo_width() - 420) // 2
-        py = parent.winfo_rooty() + (parent.winfo_height() - 480) // 2
+        px = parent.winfo_rootx() + (parent.winfo_width() - 440) // 2
+        py = parent.winfo_rooty() + (parent.winfo_height() - 500) // 2
         self.win.geometry(f"+{max(0,px)}+{max(0,py)}")
         self.win.deiconify()
         self.win.grab_set()
@@ -810,25 +814,22 @@ class SettingsDialog:
     def _add_field(self, parent, label, key, default, kind, options=None):
         row = ctk.CTkFrame(parent, fg_color="transparent")
         row.pack(fill="x", padx=14, pady=(8, 2))
-        ctk.CTkLabel(row, text=label, font=("", 11), text_color=CLR.DIM,
-                     width=130, anchor="w").pack(side="left")
+        ctk.CTkLabel(row, text=label, font=("", 12), text_color=self.t["dim"],
+                     width=140, anchor="w").pack(side="left")
         if kind == "entry":
             var = ctk.StringVar(value=default)
-            entry = ctk.CTkEntry(row, textvariable=var, width=200, height=30,
-                                 fg_color="#1a1a30", border_color=CLR.VDIM,
-                                 text_color=CLR.TEXT)
-            entry.pack(side="right")
+            ctk.CTkEntry(row, textvariable=var, width=210, height=32,
+                         fg_color=self.t["input_bg"], border_color=self.t["vdim"],
+                         text_color=self.t["text"], corner_radius=8).pack(side="right")
             self._fields[key] = var
         elif kind == "dropdown":
             var = ctk.StringVar(value=default)
-            dd = ctk.CTkOptionMenu(row, variable=var, values=options,
-                                   width=200, height=30,
-                                   fg_color="#1a1a30",
-                                   button_color=CLR.ACCENT,
-                                   button_hover_color="#e67e00",
-                                   dropdown_fg_color=CLR.CARD,
-                                   text_color=CLR.TEXT)
-            dd.pack(side="right")
+            ctk.CTkOptionMenu(row, variable=var, values=options, width=210, height=32,
+                              fg_color=self.t["input_bg"], button_color=self.t["accent"],
+                              button_hover_color="#e67e00",
+                              dropdown_fg_color=self.t["card"],
+                              text_color=self.t["text"],
+                              corner_radius=8).pack(side="right")
             self._fields[key] = var
 
     def _close(self):
@@ -838,7 +839,6 @@ class SettingsDialog:
     def _save(self):
         device_rmap = {"GPU": "gpu", "CPU": "cpu", "CPU+GPU": "cpu_gpu"}
         mode_rmap = {"Normal": "normal", "Eco": "eco"}
-
         new_cfg = {
             "worker_name": self._fields["worker_name"].get().strip()
                            or f"worker-{platform.node()}",
@@ -848,7 +848,6 @@ class SettingsDialog:
             "mode": mode_rmap.get(self._fields["mode"].get(), "normal"),
             "eco_cooldown": max(10, min(300, int(self._fields["eco_cooldown"].get() or 60))),
         }
-
         _save_config(new_cfg)
         if self._on_save:
             self._on_save(new_cfg)
@@ -860,11 +859,6 @@ class SettingsDialog:
 # ═══════════════════════════════════════════════════════════════════
 
 class WorkerGUI:
-    TAG_MAP = {
-        "green": CLR.GREEN, "red": CLR.RED, "yellow": CLR.YELLOW,
-        "gold": CLR.GOLD, "cyan": CLR.CYAN, "blue": CLR.BLUE,
-        "purple": CLR.PURPLE, "dim": CLR.DIM, "default": CLR.TEXT,
-    }
 
     def __init__(self):
         self.running = True
@@ -873,7 +867,19 @@ class WorkerGUI:
         self._worker_stop = None
         self._worker_ref = None
 
-        # ── Shared state (worker writes, GUI reads) ──
+        # Theme
+        cfg = _load_config()
+        self.theme_name = cfg.get("theme", "dark")
+        self.theme = THEMES.get(self.theme_name, THEMES["dark"])
+        self.TAG_MAP = {
+            "green": self.theme["green"], "red": self.theme["red"],
+            "yellow": self.theme["yellow"], "gold": self.theme["gold"],
+            "cyan": self.theme["cyan"], "blue": self.theme["blue"],
+            "purple": self.theme["purple"], "dim": self.theme["dim"],
+            "default": self.theme["text"],
+        }
+
+        # Shared state (worker writes, GUI reads)
         self.status = "STARTING"
         self.status_color = YELLOW
         self.worker_name = ""
@@ -911,12 +917,16 @@ class WorkerGUI:
         self.log_lines = []
         self.install_done = False
 
-        # ── Window ──
+        # Animation state
+        self._anim_scan = 0.0
+        self._anim_pool = 0.0
+
+        # Window
         self.root = ctk.CTk()
         self.root.title(f"Puzzle Pool Worker v{VERSION}")
-        self.root.geometry("800x850")
-        self.root.minsize(740, 760)
-        # Try installed icon first, then bundled icon as fallback
+        self.root.geometry("1200x900")
+        self.root.minsize(1050, 750)
+        self.root.configure(fg_color=self.theme["bg"])
         icon_path = None
         if ICON_FILE.exists():
             icon_path = str(ICON_FILE)
@@ -938,26 +948,27 @@ class WorkerGUI:
     # ────────── Install splash screen ──────────
 
     def _build_install_screen(self):
+        t = self.theme
         self._inst = ctk.CTkFrame(self.root, fg_color="transparent")
         self._inst.pack(fill="both", expand=True)
-        ctk.CTkFrame(self._inst, fg_color="transparent", height=150).pack()
-        ctk.CTkLabel(self._inst, text="\u29c9", font=("", 60, "bold"),
-                     text_color=CLR.ACCENT).pack()
+        ctk.CTkFrame(self._inst, fg_color="transparent", height=180).pack()
+        ctk.CTkLabel(self._inst, text="\u29c9", font=("", 72, "bold"),
+                     text_color=t["accent"]).pack()
         ctk.CTkLabel(self._inst, text="Puzzle Pool Worker",
-                     font=("", 24, "bold"), text_color=CLR.ACCENT).pack(pady=(10, 5))
-        ctk.CTkLabel(self._inst, text=f"v{VERSION}", font=("", 12),
-                     text_color=CLR.DIM).pack()
+                     font=("", 28, "bold"), text_color=t["accent"]).pack(pady=(12, 5))
+        ctk.CTkLabel(self._inst, text=f"v{VERSION}", font=("", 13),
+                     text_color=t["dim"]).pack()
         self._lbl_inst = ctk.CTkLabel(self._inst, text="Initializing...",
-                                       font=("", 13), text_color=CLR.TEXT)
-        self._lbl_inst.pack(pady=(40, 10))
-        self._pb_inst = ctk.CTkProgressBar(self._inst, width=400, height=18,
-                                            progress_color=CLR.ACCENT,
-                                            fg_color="#1a1a30", corner_radius=6)
+                                       font=("", 14), text_color=t["text"])
+        self._lbl_inst.pack(pady=(50, 12))
+        self._pb_inst = ctk.CTkProgressBar(self._inst, width=440, height=20,
+                                            progress_color=t["accent"],
+                                            fg_color=t["progress_bg"], corner_radius=8)
         self._pb_inst.pack()
         self._pb_inst.set(0)
-        self._lbl_inst2 = ctk.CTkLabel(self._inst, text="", font=("", 10),
-                                        text_color=CLR.DIM)
-        self._lbl_inst2.pack(pady=(10, 0))
+        self._lbl_inst2 = ctk.CTkLabel(self._inst, text="", font=("", 11),
+                                        text_color=t["dim"])
+        self._lbl_inst2.pack(pady=(12, 0))
 
     def show_install_progress(self, msg, pct=None, detail=""):
         try:
@@ -984,234 +995,330 @@ class WorkerGUI:
         self.install_done = True
         self._refresh()
 
-    # ────────── Main screen ──────────
+    # ────────── Main screen (two-column layout) ──────────
+
+    def _card(self, parent, alt=False, **kw):
+        """Create a glass-style card frame."""
+        t = self.theme
+        return ctk.CTkFrame(parent, fg_color=t["card_alt" if alt else "card"],
+                            border_color=t["card_border"], border_width=1,
+                            corner_radius=12, **kw)
 
     def _build_main_screen(self):
+        t = self.theme
         self._main_frame = ctk.CTkFrame(self.root, fg_color="transparent")
         self._main_frame.pack(fill="both", expand=True)
         m = self._main_frame
-        pad = {"padx": 10, "pady": (0, 5)}
 
-        # Header
-        hdr = ctk.CTkFrame(m, fg_color="#14142a", corner_radius=10, height=52)
+        # ── Header ──
+        hdr = ctk.CTkFrame(m, fg_color=t["header"], corner_radius=12,
+                           border_color=t["card_border"], border_width=1, height=56)
         hdr.pack(fill="x", padx=10, pady=(8, 6))
         hdr.pack_propagate(False)
-        self._lbl_btc = ctk.CTkLabel(hdr, text="\u29c9", font=("", 22, "bold"),
-                                      text_color=CLR.ACCENT)
-        self._lbl_btc.pack(side="left", padx=(16, 8))
-        ctk.CTkLabel(hdr, text="PUZZLE POOL WORKER", font=("", 15, "bold"),
-                     text_color=CLR.ACCENT).pack(side="left")
-        # Version badge
-        vbadge = ctk.CTkFrame(hdr, fg_color=CLR.ACCENT, corner_radius=6,
-                              width=50, height=20)
-        vbadge.pack(side="right", padx=16)
+        self._lbl_btc = ctk.CTkLabel(hdr, text="\u29c9", font=("", 24, "bold"),
+                                      text_color=t["accent"])
+        self._lbl_btc.pack(side="left", padx=(18, 10))
+        ctk.CTkLabel(hdr, text="PUZZLE POOL WORKER", font=("", 17, "bold"),
+                     text_color=t["accent"]).pack(side="left")
+        vbadge = ctk.CTkFrame(hdr, fg_color=t["accent"], corner_radius=6,
+                              width=56, height=22)
+        vbadge.pack(side="left", padx=(10, 0))
         vbadge.pack_propagate(False)
         ctk.CTkLabel(vbadge, text=f"v{VERSION}", font=("", 9, "bold"),
                      text_color="#000").pack(expand=True)
 
+        # Theme toggle + settings in header
+        self._btn_settings = ctk.CTkButton(
+            hdr, text="\u2699", width=36, height=36,
+            fg_color=t["vdim"], hover_color=t["dim"],
+            text_color=t["text"], font=("", 18), corner_radius=10,
+            command=self._on_settings)
+        self._btn_settings.pack(side="right", padx=(0, 14))
+        theme_icon = "\u263e" if self.theme_name == "dark" else "\u2600"
+        self._btn_theme = ctk.CTkButton(
+            hdr, text=theme_icon, width=36, height=36,
+            fg_color=t["vdim"], hover_color=t["dim"],
+            text_color=t["text"], font=("", 18), corner_radius=10,
+            command=self._toggle_theme)
+        self._btn_theme.pack(side="right", padx=(0, 6))
+
         # ── Controls Bar ──
-        ctrl = ctk.CTkFrame(m, fg_color=CLR.CARD, corner_radius=10)
-        ctrl.pack(fill="x", **pad)
+        ctrl = self._card(m)
+        ctrl.pack(fill="x", padx=10, pady=(0, 5))
         ci = ctk.CTkFrame(ctrl, fg_color="transparent")
         ci.pack(fill="x", padx=14, pady=8)
 
-        # Start / Pause / Stop buttons
         self._btn_start = ctk.CTkButton(
-            ci, text="\u25b6 Start", width=90, height=32,
-            fg_color=CLR.GREEN, hover_color="#00c853",
-            text_color="#000", font=("", 12, "bold"),
+            ci, text="\u25b6 Start", width=100, height=36,
+            fg_color=t["green"], hover_color="#00c853",
+            text_color="#000", font=("", 13, "bold"), corner_radius=10,
             command=self._on_start)
         self._btn_start.pack(side="left", padx=(0, 6))
-
         self._btn_pause = ctk.CTkButton(
-            ci, text="\u23f8 Pause", width=90, height=32,
-            fg_color=CLR.YELLOW, hover_color="#ffab00",
-            text_color="#000", font=("", 12, "bold"),
+            ci, text="\u23f8 Pause", width=100, height=36,
+            fg_color=t["yellow"], hover_color="#ffab00",
+            text_color="#000", font=("", 13, "bold"), corner_radius=10,
             command=self._on_pause, state="disabled")
         self._btn_pause.pack(side="left", padx=(0, 6))
-
         self._btn_stop = ctk.CTkButton(
-            ci, text="\u23f9 Stop", width=90, height=32,
-            fg_color=CLR.RED, hover_color="#d50000",
-            text_color="#fff", font=("", 12, "bold"),
+            ci, text="\u23f9 Stop", width=100, height=36,
+            fg_color=t["red"], hover_color="#d50000",
+            text_color="#fff", font=("", 13, "bold"), corner_radius=10,
             command=self._on_stop, state="disabled")
         self._btn_stop.pack(side="left", padx=(0, 16))
 
-        # Mode dropdown
-        ctk.CTkLabel(ci, text="Mode:", font=("", 10), text_color=CLR.DIM).pack(side="left", padx=(0, 4))
+        ctk.CTkLabel(ci, text="Mode:", font=("", 11), text_color=t["dim"]).pack(side="left", padx=(0, 4))
         cfg = _load_config()
         mode_map = {"normal": "Normal", "eco": "Eco"}
         self._var_mode = ctk.StringVar(value=mode_map.get(cfg.get("mode", "normal"), "Normal"))
         self._dd_mode = ctk.CTkOptionMenu(
             ci, variable=self._var_mode, values=["Normal", "Eco"],
-            width=90, height=28, fg_color="#1a1a30",
-            button_color=CLR.ACCENT, button_hover_color="#e67e00",
-            dropdown_fg_color=CLR.CARD, text_color=CLR.TEXT,
-            command=self._on_mode_change)
+            width=95, height=30, fg_color=t["input_bg"],
+            button_color=t["accent"], button_hover_color="#e67e00",
+            dropdown_fg_color=t["card"], text_color=t["text"],
+            corner_radius=8, command=self._on_mode_change)
         self._dd_mode.pack(side="left", padx=(0, 12))
 
-        # Device dropdown
-        ctk.CTkLabel(ci, text="Device:", font=("", 10), text_color=CLR.DIM).pack(side="left", padx=(0, 4))
+        ctk.CTkLabel(ci, text="Device:", font=("", 11), text_color=t["dim"]).pack(side="left", padx=(0, 4))
         device_map = {"gpu": "GPU", "cpu": "CPU", "cpu_gpu": "CPU+GPU"}
         self._var_device = ctk.StringVar(value=device_map.get(cfg.get("device", "gpu"), "GPU"))
         self._dd_device = ctk.CTkOptionMenu(
             ci, variable=self._var_device, values=["GPU", "CPU", "CPU+GPU"],
-            width=100, height=28, fg_color="#1a1a30",
-            button_color=CLR.ACCENT, button_hover_color="#e67e00",
-            dropdown_fg_color=CLR.CARD, text_color=CLR.TEXT,
-            command=self._on_device_change)
-        self._dd_device.pack(side="left", padx=(0, 12))
+            width=105, height=30, fg_color=t["input_bg"],
+            button_color=t["accent"], button_hover_color="#e67e00",
+            dropdown_fg_color=t["card"], text_color=t["text"],
+            corner_radius=8, command=self._on_device_change)
+        self._dd_device.pack(side="left")
 
-        # Settings gear button
-        self._btn_settings = ctk.CTkButton(
-            ci, text="\u2699", width=32, height=32,
-            fg_color=CLR.VDIM, hover_color=CLR.DIM,
-            text_color=CLR.TEXT, font=("", 16),
-            command=self._on_settings)
-        self._btn_settings.pack(side="right")
+        # ── Two-column content ──
+        content = ctk.CTkFrame(m, fg_color="transparent")
+        content.pack(fill="both", expand=True, padx=10, pady=(0, 2))
+        content.grid_columnconfigure(0, weight=58)
+        content.grid_columnconfigure(1, weight=42)
+        content.grid_rowconfigure(0, weight=1)
 
-        # Status
-        sc = ctk.CTkFrame(m, fg_color=CLR.CARD, corner_radius=10)
-        sc.pack(fill="x", **pad)
+        left = ctk.CTkFrame(content, fg_color="transparent")
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
+        right_col = ctk.CTkFrame(content, fg_color="transparent")
+        right_col.grid(row=0, column=1, sticky="nsew", padx=(4, 0))
+
+        pad_card = {"padx": 0, "pady": (0, 5)}
+
+        # ── LEFT: Status card ──
+        sc = self._card(left)
+        sc.pack(fill="x", **pad_card)
         si = ctk.CTkFrame(sc, fg_color="transparent")
         si.pack(fill="x", padx=14, pady=10)
         r1 = ctk.CTkFrame(si, fg_color="transparent")
         r1.pack(fill="x")
-        ctk.CTkLabel(r1, text="STATUS", font=("", 10), text_color=CLR.DIM).pack(side="left")
-        self._lbl_dot = ctk.CTkLabel(r1, text="\u25cf", font=("", 14), text_color=CLR.YELLOW)
-        self._lbl_dot.pack(side="left", padx=(8, 3))
-        self._lbl_status = ctk.CTkLabel(r1, text="STARTING", font=("", 12, "bold"),
-                                         text_color=CLR.YELLOW)
+        ctk.CTkLabel(r1, text="STATUS", font=("", 12), text_color=t["dim"]).pack(side="left")
+        self._lbl_dot = ctk.CTkLabel(r1, text="\u25cf", font=("", 16), text_color=t["yellow"])
+        self._lbl_dot.pack(side="left", padx=(10, 4))
+        self._lbl_status = ctk.CTkLabel(r1, text="STARTING", font=("", 14, "bold"),
+                                         text_color=t["yellow"])
         self._lbl_status.pack(side="left")
-        ctk.CTkLabel(r1, text="POOL", font=("", 10), text_color=CLR.DIM).pack(side="left", padx=(32, 6))
+        ctk.CTkLabel(r1, text="POOL", font=("", 12), text_color=t["dim"]).pack(side="left", padx=(32, 6))
         self._lbl_pool = ctk.CTkLabel(r1, text=POOL_URL.replace("https://", ""),
-                                       font=("", 11, "bold"), text_color=CLR.CYAN)
+                                       font=("", 12, "bold"), text_color=t["cyan"])
         self._lbl_pool.pack(side="left")
         r2 = ctk.CTkFrame(si, fg_color="transparent")
-        r2.pack(fill="x", pady=(4, 0))
-        ctk.CTkLabel(r2, text="WORKER", font=("", 10), text_color=CLR.DIM).pack(side="left")
-        self._lbl_worker = ctk.CTkLabel(r2, text="...", font=("", 11, "bold"), text_color=CLR.CYAN)
+        r2.pack(fill="x", pady=(5, 0))
+        ctk.CTkLabel(r2, text="WORKER", font=("", 12), text_color=t["dim"]).pack(side="left")
+        self._lbl_worker = ctk.CTkLabel(r2, text="...", font=("", 12, "bold"), text_color=t["cyan"])
         self._lbl_worker.pack(side="left", padx=(6, 0))
-        ctk.CTkLabel(r2, text="GPU", font=("", 10), text_color=CLR.DIM).pack(side="left", padx=(32, 6))
-        self._lbl_gpu = ctk.CTkLabel(r2, text="Detecting...", font=("", 11, "bold"), text_color=CLR.GREEN)
+        ctk.CTkLabel(r2, text="GPU", font=("", 12), text_color=t["dim"]).pack(side="left", padx=(32, 6))
+        self._lbl_gpu = ctk.CTkLabel(r2, text="Detecting...", font=("", 12, "bold"), text_color=t["green"])
         self._lbl_gpu.pack(side="left")
 
-        # Current scan
-        scan = ctk.CTkFrame(m, fg_color=CLR.CARD, corner_radius=10)
-        scan.pack(fill="x", **pad)
+        # ── LEFT: Current Scan card ──
+        scan = self._card(left)
+        scan.pack(fill="x", **pad_card)
         si2 = ctk.CTkFrame(scan, fg_color="transparent")
         si2.pack(fill="x", padx=14, pady=10)
-        ctk.CTkLabel(si2, text="CURRENT SCAN", font=("", 12, "bold"), text_color=CLR.GOLD).pack(anchor="w")
-        self._lbl_chunk = ctk.CTkLabel(si2, text="Waiting for work...", font=("", 11, "bold"), text_color=CLR.DIM)
+        ctk.CTkLabel(si2, text="CURRENT SCAN", font=("", 14, "bold"), text_color=t["gold"]).pack(anchor="w")
+        self._lbl_chunk = ctk.CTkLabel(si2, text="Waiting for work...",
+                                        font=("", 13, "bold"), text_color=t["dim"])
         self._lbl_chunk.pack(anchor="w", pady=(6, 0))
-        self._lbl_range = ctk.CTkLabel(si2, text="", font=("", 10), text_color=CLR.DIM)
+        self._lbl_range = ctk.CTkLabel(si2, text="", font=("", 11), text_color=t["dim"])
         self._lbl_range.pack(anchor="w", pady=(2, 0))
+
         pb = ctk.CTkFrame(si2, fg_color="transparent")
         pb.pack(fill="x", pady=(8, 0))
-        self._pb_scan = ctk.CTkProgressBar(pb, height=20, progress_color=CLR.ACCENT,
-                                            fg_color="#1a1a30", corner_radius=6)
+        self._pb_scan = ctk.CTkProgressBar(pb, height=22, progress_color=t["accent"],
+                                            fg_color=t["progress_bg"], corner_radius=8)
         self._pb_scan.pack(side="left", fill="x", expand=True)
         self._pb_scan.set(0)
-        self._lbl_pct = ctk.CTkLabel(pb, text="0.0%", font=("", 12, "bold"),
-                                      text_color=CLR.ACCENT, width=65)
+        self._lbl_pct = ctk.CTkLabel(pb, text="0.0%", font=("", 13, "bold"),
+                                      text_color=t["accent"], width=70)
         self._lbl_pct.pack(side="right", padx=(10, 0))
 
-        # Heartbeat indicator
-        hb_row = ctk.CTkFrame(si2, fg_color="transparent")
-        hb_row.pack(anchor="w", pady=(8, 0))
-        ctk.CTkLabel(hb_row, text="HEARTBEAT", font=("", 10), text_color=CLR.DIM).pack(side="left", padx=(0, 8))
-        self._lbl_hb_dot = ctk.CTkLabel(hb_row, text="\u25cf", font=("", 12), text_color=CLR.VDIM)
-        self._lbl_hb_dot.pack(side="left", padx=3)
-        self._lbl_hb_text = ctk.CTkLabel(hb_row, text="--", font=("", 10), text_color=CLR.DIM)
-        self._lbl_hb_text.pack(side="left", padx=(6, 0))
-        ctk.CTkLabel(hb_row, text="SPEED", font=("", 10), text_color=CLR.DIM).pack(side="left", padx=(24, 8))
-        self._lbl_cur_speed = ctk.CTkLabel(hb_row, text="--", font=("", 10, "bold"), text_color=CLR.CYAN)
-        self._lbl_cur_speed.pack(side="left")
+        # Speed + heartbeat + ETA row
+        info_row = ctk.CTkFrame(si2, fg_color="transparent")
+        info_row.pack(fill="x", pady=(8, 0))
+        ctk.CTkLabel(info_row, text="\u2665", font=("", 12), text_color=t["dim"]).pack(side="left")
+        self._lbl_hb_dot = ctk.CTkLabel(info_row, text="\u25cf", font=("", 10),
+                                         text_color=t["vdim"])
+        self._lbl_hb_dot.pack(side="left", padx=(2, 0))
+        self._lbl_hb_text = ctk.CTkLabel(info_row, text="--", font=("", 12),
+                                          text_color=t["dim"])
+        self._lbl_hb_text.pack(side="left", padx=(4, 0))
 
-        # Stats
-        st = ctk.CTkFrame(m, fg_color=CLR.CARD, corner_radius=10)
-        st.pack(fill="x", **pad)
-        si3 = ctk.CTkFrame(st, fg_color="transparent")
-        si3.pack(fill="x", padx=14, pady=10)
-        cols = ctk.CTkFrame(si3, fg_color="transparent")
-        cols.pack(fill="x")
-        left = ctk.CTkFrame(cols, fg_color="transparent")
-        left.pack(side="left", fill="both", expand=True)
-        ctk.CTkLabel(left, text="MY STATS", font=("", 12, "bold"), text_color=CLR.GOLD).pack(anchor="w")
+        ctk.CTkLabel(info_row, text="\u26a1", font=("", 13), text_color=t["accent"]).pack(side="left", padx=(18, 0))
+        self._lbl_cur_speed = ctk.CTkLabel(info_row, text="--", font=("", 15, "bold"),
+                                            text_color=t["cyan"])
+        self._lbl_cur_speed.pack(side="left", padx=(4, 0))
+
+        ctk.CTkLabel(info_row, text="ETA", font=("", 12), text_color=t["dim"]).pack(side="left", padx=(18, 4))
+        self._lbl_eta = ctk.CTkLabel(info_row, text="--", font=("", 13, "bold"),
+                                      text_color=t["purple"])
+        self._lbl_eta.pack(side="left")
+
+        # Keys scanned in chunk
+        key_row = ctk.CTkFrame(si2, fg_color="transparent")
+        key_row.pack(fill="x", pady=(4, 0))
+        ctk.CTkLabel(key_row, text="Keys in chunk:", font=("", 12), text_color=t["dim"]).pack(side="left")
+        self._lbl_chunk_keys = ctk.CTkLabel(key_row, text="--", font=("", 13, "bold"),
+                                             text_color=t["accent"])
+        self._lbl_chunk_keys.pack(side="left", padx=(6, 0))
+
+        # ── LEFT: Stats row (My Stats + System side by side) ──
+        stats_row = ctk.CTkFrame(left, fg_color="transparent")
+        stats_row.pack(fill="x", **pad_card)
+        stats_row.grid_columnconfigure(0, weight=1)
+        stats_row.grid_columnconfigure(1, weight=1)
+
+        # My Stats card
+        ms_card = self._card(stats_row)
+        ms_card.grid(row=0, column=0, sticky="nsew", padx=(0, 3))
+        msi = ctk.CTkFrame(ms_card, fg_color="transparent")
+        msi.pack(fill="x", padx=12, pady=10)
+        ctk.CTkLabel(msi, text="MY STATS", font=("", 14, "bold"), text_color=t["gold"]).pack(anchor="w")
         self._sv = {}
         for k, lb in [("chunks", "Chunks"), ("keys", "Keys"), ("speed", "Speed"), ("uptime", "Uptime")]:
-            row = ctk.CTkFrame(left, fg_color="transparent")
-            row.pack(anchor="w", fill="x", pady=1)
-            ctk.CTkLabel(row, text=f"  {lb}", font=("", 10), text_color=CLR.DIM, width=65, anchor="w").pack(side="left")
-            v = ctk.CTkLabel(row, text="--", font=("", 10, "bold"), text_color=CLR.TEXT)
-            v.pack(side="left")
-            self._sv[k] = v
-        right = ctk.CTkFrame(cols, fg_color="transparent")
-        right.pack(side="right", fill="both", expand=True)
-        ctk.CTkLabel(right, text="SYSTEM", font=("", 12, "bold"), text_color=CLR.GOLD).pack(anchor="w")
-        for k, lb in [("gpu", "GPU"), ("vram", "VRAM"), ("cpu", "CPU"), ("ram", "RAM")]:
-            row = ctk.CTkFrame(right, fg_color="transparent")
-            row.pack(anchor="w", fill="x", pady=1)
-            ctk.CTkLabel(row, text=f"  {lb}", font=("", 10), text_color=CLR.DIM, width=55, anchor="w").pack(side="left")
-            v = ctk.CTkLabel(row, text="--", font=("", 10, "bold"), text_color=CLR.TEXT)
+            row = ctk.CTkFrame(msi, fg_color="transparent")
+            row.pack(anchor="w", fill="x", pady=2)
+            ctk.CTkLabel(row, text=lb, font=("", 12), text_color=t["dim"],
+                         width=70, anchor="w").pack(side="left")
+            v = ctk.CTkLabel(row, text="--", font=("", 13, "bold"), text_color=t["text"])
             v.pack(side="left")
             self._sv[k] = v
 
-        # Pool network
-        pf = ctk.CTkFrame(m, fg_color=CLR.CARD, corner_radius=10)
-        pf.pack(fill="x", **pad)
+        # System card
+        sys_card = self._card(stats_row)
+        sys_card.grid(row=0, column=1, sticky="nsew", padx=(3, 0))
+        syi = ctk.CTkFrame(sys_card, fg_color="transparent")
+        syi.pack(fill="x", padx=12, pady=10)
+        ctk.CTkLabel(syi, text="SYSTEM", font=("", 14, "bold"), text_color=t["gold"]).pack(anchor="w")
+        for k, lb in [("gpu", "GPU"), ("vram", "VRAM"), ("cpu", "CPU"), ("ram", "RAM")]:
+            row = ctk.CTkFrame(syi, fg_color="transparent")
+            row.pack(anchor="w", fill="x", pady=2)
+            ctk.CTkLabel(row, text=lb, font=("", 12), text_color=t["dim"],
+                         width=60, anchor="w").pack(side="left")
+            v = ctk.CTkLabel(row, text="--", font=("", 13, "bold"), text_color=t["text"])
+            v.pack(side="left")
+            self._sv[k] = v
+
+        # ── LEFT: Pool Network card ──
+        pf = self._card(left)
+        pf.pack(fill="x", **pad_card)
         si4 = ctk.CTkFrame(pf, fg_color="transparent")
         si4.pack(fill="x", padx=14, pady=10)
-        ctk.CTkLabel(si4, text="POOL NETWORK", font=("", 12, "bold"), text_color=CLR.GOLD).pack(anchor="w")
+        ctk.CTkLabel(si4, text="POOL NETWORK", font=("", 14, "bold"), text_color=t["gold"]).pack(anchor="w")
         pr = ctk.CTkFrame(si4, fg_color="transparent")
         pr.pack(fill="x", pady=(4, 0))
         for k, lb in [("p_workers", "Workers"), ("p_speed", "Speed"), ("p_eta", "ETA")]:
-            ctk.CTkLabel(pr, text=lb, font=("", 10), text_color=CLR.DIM).pack(side="left")
-            v = ctk.CTkLabel(pr, text="--", font=("", 10, "bold"), text_color=CLR.TEXT)
-            v.pack(side="left", padx=(4, 18))
+            ctk.CTkLabel(pr, text=lb, font=("", 12), text_color=t["dim"]).pack(side="left")
+            v = ctk.CTkLabel(pr, text="--", font=("", 13, "bold"), text_color=t["text"])
+            v.pack(side="left", padx=(4, 20))
             self._sv[k] = v
         ppb = ctk.CTkFrame(si4, fg_color="transparent")
         ppb.pack(fill="x", pady=(6, 0))
-        self._pb_pool = ctk.CTkProgressBar(ppb, height=16, progress_color=CLR.GREEN,
-                                            fg_color="#1a1a30", corner_radius=5)
+        self._pb_pool = ctk.CTkProgressBar(ppb, height=18, progress_color=t["green"],
+                                            fg_color=t["progress_bg"], corner_radius=6)
         self._pb_pool.pack(side="left", fill="x", expand=True)
         self._pb_pool.set(0)
-        self._lbl_ppct = ctk.CTkLabel(ppb, text="0.000000%", font=("", 10, "bold"),
-                                       text_color=CLR.GREEN, width=90)
+        self._lbl_ppct = ctk.CTkLabel(ppb, text="0.000000%", font=("", 12, "bold"),
+                                       text_color=t["green"], width=100)
         self._lbl_ppct.pack(side="right", padx=(8, 0))
         pr2 = ctk.CTkFrame(si4, fg_color="transparent")
         pr2.pack(fill="x", pady=(4, 0))
-        ctk.CTkLabel(pr2, text="Scanned", font=("", 10), text_color=CLR.DIM).pack(side="left")
-        self._sv["p_sc"] = ctk.CTkLabel(pr2, text="--", font=("", 10, "bold"), text_color=CLR.ACCENT)
-        self._sv["p_sc"].pack(side="left", padx=(4, 18))
-        ctk.CTkLabel(pr2, text="Remaining", font=("", 10), text_color=CLR.DIM).pack(side="left")
-        self._sv["p_rm"] = ctk.CTkLabel(pr2, text="--", font=("", 10, "bold"), text_color=CLR.BLUE)
+        ctk.CTkLabel(pr2, text="Scanned", font=("", 12), text_color=t["dim"]).pack(side="left")
+        self._sv["p_sc"] = ctk.CTkLabel(pr2, text="--", font=("", 13, "bold"), text_color=t["accent"])
+        self._sv["p_sc"].pack(side="left", padx=(4, 20))
+        ctk.CTkLabel(pr2, text="Remaining", font=("", 12), text_color=t["dim"]).pack(side="left")
+        self._sv["p_rm"] = ctk.CTkLabel(pr2, text="--", font=("", 13, "bold"), text_color=t["blue"])
         self._sv["p_rm"].pack(side="left", padx=(4, 0))
-        self._lbl_found = ctk.CTkLabel(si4, text="", font=("", 13, "bold"), text_color=CLR.GREEN)
+        self._lbl_found = ctk.CTkLabel(si4, text="", font=("", 14, "bold"), text_color=t["green"])
         self._lbl_found.pack(anchor="w")
 
-        # Log
-        lc = ctk.CTkFrame(m, fg_color=CLR.CARD, corner_radius=10)
-        lc.pack(fill="both", expand=True, **pad)
+        # ── RIGHT: Live Stream log ──
+        log_card = self._card(right_col)
+        log_card.pack(fill="both", expand=True, pady=(0, 5))
+        ctk.CTkLabel(log_card, text="LIVE STREAM", font=("", 14, "bold"),
+                     text_color=t["gold"]).pack(anchor="w", padx=14, pady=(10, 0))
         mono = "Consolas" if IS_WIN else "monospace"
-        self._lb = ctk.CTkTextbox(lc, font=(mono, 10), fg_color="#06060e",
-                                   text_color=CLR.DIM, corner_radius=8, state="disabled")
-        self._lb.pack(fill="both", expand=True, padx=8, pady=8)
+        self._lb = ctk.CTkTextbox(log_card, font=(mono, 11), fg_color=t["log_bg"],
+                                   text_color=t["dim"], corner_radius=8, state="disabled")
+        self._lb.pack(fill="both", expand=True, padx=10, pady=(6, 10))
         tw = self._lb._textbox
-        for t, c in [("t_green", CLR.GREEN), ("t_red", CLR.RED), ("t_yellow", CLR.YELLOW),
-                     ("t_cyan", CLR.CYAN), ("t_blue", CLR.BLUE), ("t_purple", CLR.PURPLE),
-                     ("t_dim", CLR.DIM), ("t_default", CLR.TEXT), ("t_time", CLR.VDIM)]:
-            tw.tag_config(t, foreground=c)
+        for tag, c in [("t_green", t["green"]), ("t_red", t["red"]),
+                       ("t_yellow", t["yellow"]), ("t_cyan", t["cyan"]),
+                       ("t_blue", t["blue"]), ("t_purple", t["purple"]),
+                       ("t_dim", t["dim"]), ("t_default", t["text"]),
+                       ("t_time", t["vdim"])]:
+            tw.tag_config(tag, foreground=c)
 
-        # Footer
-        ft = ctk.CTkFrame(m, fg_color="transparent", height=28)
-        ft.pack(fill="x", padx=10)
-        lk = ctk.CTkLabel(ft, text="Dashboard: https://starnetlive.space",
-                           font=("", 11), text_color=CLR.CYAN, cursor="hand2")
-        lk.pack(side="left")
+        # Dashboard link under log
+        lk = ctk.CTkLabel(right_col, text="Dashboard: https://starnetlive.space",
+                           font=("", 12), text_color=t["cyan"], cursor="hand2")
+        lk.pack(anchor="w", padx=4, pady=(0, 2))
         lk.bind("<Button-1>", lambda e: __import__("webbrowser").open(POOL_URL))
-        ctk.CTkLabel(ft, text="Close = minimize to tray", font=("", 10),
-                     text_color=CLR.DIM).pack(side="right")
+
+        # ── Footer ──
+        ft = ctk.CTkFrame(m, fg_color="transparent", height=28)
+        ft.pack(fill="x", padx=10, pady=(0, 4))
+        ctk.CTkLabel(ft, text="Close = minimize to tray", font=("", 11),
+                     text_color=t["dim"]).pack(side="right")
+
+    # ────────── Theme toggle ──────────
+
+    def _toggle_theme(self):
+        self.theme_name = "light" if self.theme_name == "dark" else "dark"
+        self.theme = THEMES[self.theme_name]
+        self.TAG_MAP = {
+            "green": self.theme["green"], "red": self.theme["red"],
+            "yellow": self.theme["yellow"], "gold": self.theme["gold"],
+            "cyan": self.theme["cyan"], "blue": self.theme["blue"],
+            "purple": self.theme["purple"], "dim": self.theme["dim"],
+            "default": self.theme["text"],
+        }
+        _save_config({"theme": self.theme_name})
+        ctk.set_appearance_mode("light" if self.theme_name == "light" else "dark")
+        # Rebuild UI
+        was_installed = self.install_done
+        self._main_frame.destroy()
+        self._build_main_screen()
+        if was_installed:
+            self._main_frame.pack(fill="both", expand=True)
+            self._refresh()
+        else:
+            self._main_frame.pack_forget()
+        self.root.configure(fg_color=self.theme["bg"])
+        self._btn_theme.configure(text="\u263e" if self.theme_name == "dark" else "\u2600")
+        self.log(f"Theme: {self.theme_name}", CYAN)
+
+    # ────────── Animated progress ──────────
+
+    def _animate_progress(self, bar, target, attr):
+        current = getattr(self, attr)
+        if abs(target - current) < 0.001:
+            return
+        step = (target - current) * 0.15
+        new = current + step
+        setattr(self, attr, new)
+        bar.set(max(0, min(1, new)))
+        if abs(target - new) > 0.001:
+            self.root.after(16, lambda: self._animate_progress(bar, target, attr))
 
     # ────────── Control handlers ──────────
 
@@ -1271,7 +1378,7 @@ class WorkerGUI:
 
     def _on_settings(self):
         cfg = _load_config()
-        SettingsDialog(self.root, cfg, self._apply_settings)
+        SettingsDialog(self.root, cfg, self._apply_settings, theme=self.theme)
 
     def _apply_settings(self, new_cfg):
         if self._worker_ref:
@@ -1284,7 +1391,6 @@ class WorkerGUI:
             w.runner.cpu_threads = new_cfg.get("cpu_threads", w.runner.cpu_threads)
             w.gpu_id = new_cfg.get("gpu_id", w.gpu_id)
         self.worker_name = new_cfg.get("worker_name", self.worker_name)
-        # Sync dropdowns
         mode_map = {"normal": "Normal", "eco": "Eco"}
         device_map = {"gpu": "GPU", "cpu": "CPU", "cpu_gpu": "CPU+GPU"}
         self._var_mode.set(mode_map.get(new_cfg.get("mode", "normal"), "Normal"))
@@ -1332,7 +1438,7 @@ class WorkerGUI:
         tag = f"t_{color}" if color in ("green","red","yellow","cyan","blue","purple","dim") else "t_default"
         with self._log_lock:
             self.log_lines.append((ts, msg, tag))
-            if len(self.log_lines) > 100:
+            if len(self.log_lines) > 200:
                 self.log_lines.pop(0)
         try:
             self.root.after_idle(self._flush_log)
@@ -1345,7 +1451,7 @@ class WorkerGUI:
         tw = self._lb._textbox
         self._lb.configure(state="normal")
         tw.delete("1.0", "end")
-        for ts, msg, tag in lines[-30:]:
+        for ts, msg, tag in lines[-50:]:
             tw.insert("end", f"[{ts}] ", "t_time")
             tw.insert("end", f"{msg}\n", tag)
         tw.see("end")
@@ -1357,58 +1463,86 @@ class WorkerGUI:
         if not self.running:
             return
         self._tick += 1
-        hx = self.TAG_MAP.get(self.status_color, CLR.TEXT)
+        t = self.theme
+        hx = self.TAG_MAP.get(self.status_color, t["text"])
         self._lbl_status.configure(text=self.status, text_color=hx)
         show = self._tick % 4 < 3 or self.status != "SCANNING"
-        self._lbl_dot.configure(text_color=hx if show else CLR.CARD)
+        self._lbl_dot.configure(text_color=hx if show else t["card"])
         self._lbl_worker.configure(text=self.worker_name or "...")
         self._lbl_gpu.configure(text=self.gpu_name[:40])
 
         if self.current_chunk is not None:
-            self._lbl_chunk.configure(text=f"Chunk #{self.current_chunk:,}", text_color=CLR.ACCENT)
+            self._lbl_chunk.configure(text=f"Chunk #{self.current_chunk:,}", text_color=t["accent"])
             self._lbl_range.configure(text=f"{self.chunk_range_start}  \u2192  {self.chunk_range_end}")
         else:
-            self._lbl_chunk.configure(text="Waiting for work...", text_color=CLR.DIM)
+            self._lbl_chunk.configure(text="Waiting for work...", text_color=t["dim"])
             self._lbl_range.configure(text="")
 
-        self._pb_scan.set(max(0, min(1, self.chunk_progress / 100)))
+        # Animated scan progress
+        scan_target = max(0, min(1, self.chunk_progress / 100))
+        self._animate_progress(self._pb_scan, scan_target, "_anim_scan")
         self._lbl_pct.configure(text=f"{self.chunk_progress:.1f}%")
 
-        # Heartbeat indicator
+        # Heartbeat
         if self.heartbeat_ok:
             ago = self.last_heartbeat_ago
-            self._lbl_hb_dot.configure(text_color=CLR.GREEN)
-            self._lbl_hb_text.configure(text=f"{ago:.0f}s ago", text_color=CLR.GREEN)
+            self._lbl_hb_dot.configure(text_color=t["green"])
+            self._lbl_hb_text.configure(text=f"{ago:.0f}s ago", text_color=t["green"])
         else:
-            self._lbl_hb_dot.configure(text_color=CLR.VDIM)
-            self._lbl_hb_text.configure(text="--", text_color=CLR.DIM)
+            self._lbl_hb_dot.configure(text_color=t["vdim"])
+            self._lbl_hb_text.configure(text="--", text_color=t["dim"])
 
-        # Current speed from KeyHunt
+        # Speed
         if self.current_speed > 0:
             self._lbl_cur_speed.configure(text=self._fs(self.current_speed))
         else:
             self._lbl_cur_speed.configure(text="--")
 
+        # ETA + keys in chunk
+        if self.current_chunk is not None and self.chunk_range_start and self.chunk_range_end:
+            try:
+                rs = int(self.chunk_range_start, 16)
+                re_ = int(self.chunk_range_end, 16)
+                chunk_size = re_ - rs + 1
+                keys_done = int(chunk_size * self.chunk_progress / 100)
+                self._lbl_chunk_keys.configure(text=self._fk(keys_done))
+                if self.current_speed > 0:
+                    remaining = chunk_size * (100 - self.chunk_progress) / 100
+                    eta_s = remaining / self.current_speed
+                    self._lbl_eta.configure(text=self._fd(eta_s))
+                else:
+                    self._lbl_eta.configure(text="--")
+            except (ValueError, ZeroDivisionError):
+                self._lbl_eta.configure(text="--")
+                self._lbl_chunk_keys.configure(text="--")
+        else:
+            self._lbl_eta.configure(text="--")
+            self._lbl_chunk_keys.configure(text="--")
+
+        # My Stats
         el = time.time() - self.session_start
-        spd = self.keys_scanned / el if el > 0 and self.keys_scanned > 0 else 0
+        spd = self.current_speed
         ct = f"{self.chunks_done} done"
         if self.chunks_accepted: ct += f"  {self.chunks_accepted} ok"
-        self._sv["chunks"].configure(text=ct, text_color=CLR.GREEN)
-        self._sv["keys"].configure(text=self._fk(self.keys_scanned), text_color=CLR.ACCENT)
-        self._sv["speed"].configure(text=self._fs(spd), text_color=CLR.CYAN)
-        self._sv["uptime"].configure(text=self._fd(el), text_color=CLR.BLUE)
+        self._sv["chunks"].configure(text=ct, text_color=t["green"])
+        self._sv["keys"].configure(text=self._fk(self.keys_scanned), text_color=t["accent"])
+        self._sv["speed"].configure(text=self._fs(spd) if spd > 0 else "--", text_color=t["cyan"])
+        self._sv["uptime"].configure(text=self._fd(el), text_color=t["blue"])
 
+        # System
         self._sv["gpu"].configure(
             text=f"{self.gpu_usage}%  {self.gpu_temp}\u00b0C  {self.gpu_power}W",
-            text_color=CLR.GREEN if self.gpu_usage > 0 else CLR.DIM)
-        self._sv["vram"].configure(text=f"{self.gpu_mem_used}/{self.gpu_mem_total} MB", text_color=CLR.CYAN)
-        self._sv["cpu"].configure(text=f"{self.cpu_usage}%", text_color=CLR.GREEN)
-        self._sv["ram"].configure(text=f"{self.ram_used}/{self.ram_total} GB", text_color=CLR.CYAN)
+            text_color=t["green"] if self.gpu_usage > 0 else t["dim"])
+        self._sv["vram"].configure(text=f"{self.gpu_mem_used}/{self.gpu_mem_total} MB", text_color=t["cyan"])
+        self._sv["cpu"].configure(text=f"{self.cpu_usage}%", text_color=t["green"])
+        self._sv["ram"].configure(text=f"{self.ram_used}/{self.ram_total} GB", text_color=t["cyan"])
 
-        self._sv["p_workers"].configure(text=str(self.pool_active), text_color=CLR.GREEN)
-        self._sv["p_speed"].configure(text=self._fs(self.pool_speed), text_color=CLR.CYAN)
-        self._sv["p_eta"].configure(text=self._fd(self.pool_eta), text_color=CLR.PURPLE)
-        self._pb_pool.set(max(0, min(1, self.pool_progress / 100)))
+        # Pool
+        self._sv["p_workers"].configure(text=str(self.pool_active), text_color=t["green"])
+        self._sv["p_speed"].configure(text=self._fs(self.pool_speed), text_color=t["cyan"])
+        self._sv["p_eta"].configure(text=self._fd(self.pool_eta), text_color=t["purple"])
+        pool_target = max(0, min(1, self.pool_progress / 100))
+        self._animate_progress(self._pb_pool, pool_target, "_anim_pool")
         self._lbl_ppct.configure(text=f"{self.pool_progress:.6f}%")
         self._sv["p_sc"].configure(text=self._fk(self.pool_total_keys))
         self._sv["p_rm"].configure(text=self._fk(self.pool_keys_remaining))
@@ -1812,6 +1946,8 @@ class PoolWorker:
 
             if self.ui:
                 self.ui.current_chunk = None
+                self.ui.current_speed = 0.0
+                self.ui.chunk_progress = 0.0
                 self.ui.heartbeat_ok = False
 
             # Eco mode cooldown

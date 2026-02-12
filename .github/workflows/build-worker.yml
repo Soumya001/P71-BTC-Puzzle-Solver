@@ -78,8 +78,43 @@ jobs:
           name: puzzle-worker-linux
           path: dist/puzzle-worker-linux
 
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install pyinstaller customtkinter pystray Pillow
+
+      - name: Build macOS binary
+        run: >
+          pyinstaller --onefile --name puzzle-worker-macos --windowed
+          --add-data "icon.ico:."
+          --add-data "icon.png:."
+          --hidden-import=customtkinter
+          --hidden-import=pystray
+          --hidden-import=pystray._darwin
+          --hidden-import=PIL
+          --hidden-import=PIL._tkinter_finder
+          --hidden-import=PIL.Image
+          --hidden-import=PIL.ImageDraw
+          --hidden-import=PIL.ImageFont
+          --collect-all customtkinter
+          puzzle_worker.py
+
+      - name: Upload macOS binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: puzzle-worker-macos
+          path: dist/puzzle-worker-macos
+
   release:
-    needs: [build-windows, build-linux]
+    needs: [build-windows, build-linux, build-macos]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
@@ -95,41 +130,51 @@ jobs:
         with:
           name: puzzle-worker-linux
 
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: puzzle-worker-macos
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             puzzle-worker.exe
             puzzle-worker-linux
+            puzzle-worker-macos
           body: |
-            ## Puzzle Pool Worker v4.1.6
+            ## Puzzle Pool Worker v4.2.0
 
             Download for your platform — just run it, everything is automatic:
             - **Windows**: `puzzle-worker.exe` — Double-click to run
             - **Linux**: `puzzle-worker-linux` — `chmod +x puzzle-worker-linux && ./puzzle-worker-linux`
+            - **macOS**: `puzzle-worker-macos` — `chmod +x puzzle-worker-macos && ./puzzle-worker-macos`
 
-            ### What's New in v4.1.6
-            - **Heartbeat race condition fix** — replaced shared `_scanning` boolean with per-assignment `threading.Event()`. Old heartbeat threads from completed assignments can no longer kill the next assignment's KeyHunt process. Every assignment now succeeds reliably.
+            ### What's New in v4.2.0
+            - **Modern two-column UI** — stats and controls on the left, live log stream on the right
+            - **Dark/Light theme** — toggle with moon/sun button in header, preference saved
+            - **Glass-like card design** — rounded corners, subtle borders, depth hierarchy
+            - **Animated progress bars** — smooth easing animation at ~60fps
+            - **ETA calculation** — shows estimated time remaining for current chunk
+            - **Speed bug fixes** — Current Scan speed now resets between chunks; My Stats speed shows live KeyHunt rate
+            - **Bigger fonts** — improved readability across all sections
+            - **Wider window** — 1200x900 for comfortable two-column layout
 
-            ### Previous (v4.1.5)
-            - Thread safety — GUI button updates use `after_idle`
-            - Clean Stop — speed/progress reset on IDLE
-            - stdin isolation — KeyHunt gets `/dev/null` stdin
-            - Hang-proof wait — proper `proc.wait()` timeout handling
-            - Registration retry — 5 attempts with backoff
+            ### Previous (v4.1.6)
+            - Heartbeat race condition fix
+            - Thread safety, clean Stop, stdin isolation
+            - Registration retry with backoff
 
             ### Features
             - Start / Pause / Stop controls
             - Normal & Eco scan modes
             - GPU / CPU / CPU+GPU device selection
             - Settings panel for all configuration
-            - Modern dark GUI with live stats
             - System tray — close window to keep mining in background
             - Auto-reconnect on connection loss
-            - Puzzle-piece Bitcoin icon
 
             ### What happens
-            1. Creates `C:\PuzzlePool` folder (Windows) or `~/.puzzle-pool` (Linux)
+            1. Creates `C:\PuzzlePool` folder (Windows) or `~/.puzzle-pool` (Linux/macOS)
             2. Auto-downloads the scanning engine (one time)
             3. Creates a desktop shortcut
             4. Connects to the pool — press Start to begin scanning

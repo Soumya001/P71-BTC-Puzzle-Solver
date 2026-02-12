@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f7931a"/>
+      <stop offset="100%" style="stop-color:#e67e00"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:rgba(255,255,255,0.3)"/>
+      <stop offset="50%" style="stop-color:rgba(255,255,255,0)"/>
+    </linearGradient>
+    <filter id="shadow" x="-4%" y="-4%" width="108%" height="108%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#00000040"/>
+    </filter>
+  </defs>
+
+  <!-- Puzzle piece body -->
+  <g filter="url(#shadow)">
+    <!-- Main rounded square -->
+    <rect x="80" y="80" width="352" height="352" rx="40" ry="40" fill="url(#bg)"/>
+
+    <!-- Top tab (outward bump) -->
+    <circle cx="256" cy="80" r="44" fill="url(#bg)"/>
+
+    <!-- Right tab (outward bump) -->
+    <circle cx="432" cy="256" r="44" fill="url(#bg)"/>
+
+    <!-- Bottom notch (inward) -->
+    <circle cx="256" cy="432" r="44" fill="url(#bg)"/>
+    <circle cx="256" cy="432" r="30" fill="#c96800"/>
+
+    <!-- Left notch (inward) -->
+    <circle cx="80" cy="256" r="44" fill="url(#bg)"/>
+    <circle cx="80" cy="256" r="30" fill="#c96800"/>
+  </g>
+
+  <!-- Shine overlay -->
+  <rect x="80" y="80" width="352" height="176" rx="40" ry="40" fill="url(#shine)" opacity="0.4"/>
+
+  <!-- Bitcoin symbol -->
+  <g transform="translate(256,260)" fill="white">
+    <!-- Vertical bars -->
+    <rect x="-12" y="-90" width="8" height="180" rx="4"/>
+    <rect x="4" y="-90" width="8" height="180" rx="4"/>
+
+    <!-- Upper B curve -->
+    <path d="M-40,-65 h50 c35,0 55,15 55,40 s-20,40-55,40 h-50 z M-20,-48 v40 h30 c18,0 28,-8 28,-20 s-10,-20-28,-20 z" fill-rule="evenodd"/>
+
+    <!-- Lower B curve -->
+    <path d="M-40,-5 h55 c38,0 60,15 60,42 s-22,43-60,43 h-55 z M-20,12 v44 h35 c20,0 32,-9 32,-22 s-12,-22-32,-22 z" fill-rule="evenodd"/>
+  </g>
+</svg>
