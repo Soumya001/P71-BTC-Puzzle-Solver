@@ -1490,7 +1490,6 @@ class PoolWorker:
                                     device=device, cpu_threads=cpu_threads)
         self.ui = ui
         self.running = True
-        self._scanning = False
         self._last_heartbeat_time = 0.0
         self._user_state = "running"  # "running", "paused", "stopped"
         self.device = device
@@ -1531,11 +1530,11 @@ class PoolWorker:
                 else:
                     raise
 
-    def _heartbeat_loop(self, assignment_id, range_start, range_end, interval):
+    def _heartbeat_loop(self, assignment_id, range_start, range_end, interval, stop_event):
         """Background thread: send heartbeats every `interval` seconds."""
-        while self._scanning:
-            time.sleep(interval)
-            if not self._scanning:
+        while not stop_event.is_set():
+            stop_event.wait(interval)  # interruptible sleep
+            if stop_event.is_set():
                 break
             progress = self.ui.chunk_progress if self.ui else 0
             span = range_end - range_start
@@ -1749,11 +1748,11 @@ class PoolWorker:
 
             self._log(f"Assignment {assignment_id[:8]}... range {rs} -> {re_}", LBLUE)
 
-            # Start heartbeat thread
-            self._scanning = True
+            # Start heartbeat thread with per-assignment stop event
+            hb_stop = threading.Event()
             hb_thread = threading.Thread(
                 target=self._heartbeat_loop,
-                args=(assignment_id, range_start_int, range_end_int, heartbeat_interval),
+                args=(assignment_id, range_start_int, range_end_int, heartbeat_interval, hb_stop),
                 daemon=True,
             )
             hb_thread.start()
@@ -1761,8 +1760,8 @@ class PoolWorker:
             # Run KeyHunt
             result = self.runner.run(rs, re_, target, self.ui)
 
-            # Stop heartbeat
-            self._scanning = False
+            # Stop heartbeat — signal first, then join
+            hb_stop.set()
             hb_thread.join(timeout=5)
 
             if result["status"] == "found":
