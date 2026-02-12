@@ -299,7 +299,7 @@ class Installer:
         if IS_FROZEN:
             bdir = Path(sys._MEIPASS)
         else:
-            bdir = Path(__file__).parent
+            bdir = Path(__file__).parent / "assets" / "icons"
         for name, dest in [("icon.ico", ICON_FILE), ("icon.png", ICON_PNG)]:
             src = bdir / name
             if src.exists():
