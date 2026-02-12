@@ -115,13 +115,13 @@ Puzzle #71 keyspace: **2^70 keys** (~1.18 sextillion). The pool splits it into *
 
 ```
                    +---------------------------------------------+
-                   |            Pool Server                       |
-                   |          starnetlive.space                   |
+                   |                 Pool Server                 |
+                   |              starnetlive.space              |
                    |                                             |
-                   |  +--------+ +--------+ +-------+ +-------+ |
-                   |  | Bitmap | | SQLite | | Stats | |  Gap  | |
-                   |  | 128 MB | |   DB   | | Engine| |Scanner| |
-                   |  +--------+ +--------+ +-------+ +-------+ |
+                   |  +--------+ +--------+ +-------+ +-------+  |
+                   |  | Bitmap | | SQLite | | Stats | |  Gap  |  |
+                   |  | 128 MB | |   DB   | | Engine| |Scanner|  |
+                   |  +--------+ +--------+ +-------+ +-------+  |
                    |                                             |
                    |  API: /register /work /heartbeat /complete  |
                    +---------------------+-----------------------+
@@ -129,7 +129,7 @@ Puzzle #71 keyspace: **2^70 keys** (~1.18 sextillion). The pool splits it into *
                       +------------------+------------------+
                       |                  |                  |
                  +----+----+       +----+----+       +----+----+
-                 |Worker 1 |       |Worker 2 |       |Worker N |
+                 | Worker1 |       | Worker2 |       | WorkerN |
                  | RTX3060 |       | RTX4090 |       |   CPU   |
                  | 1 GK/s  |       | 4 GK/s  |       | 10MK/s  |
                  +---------+       +---------+       +---------+
