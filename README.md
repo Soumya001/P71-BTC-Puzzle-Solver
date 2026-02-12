@@ -85,22 +85,22 @@ Bitcoin Puzzle #71 has a known address with funds locked behind a private key so
 
 ```
 Worker                          Pool Server
-  |                                 |
+  |                                |
   |── GET /api/register ──────────>│  Register worker, get API key
   |<── api_key ────────────────────│
-  |                                 |
+  |                                |
   |── GET /api/work ──────────────>│  Request a chunk assignment
   |<── assignment_id, range, target│
-  |                                 |
-  |   [Run KeyHunt on range]        |
-  |                                 |
+  |                                |
+  |   [Run KeyHunt on range]       |
+  |                                |
   |── POST /api/heartbeat ────────>│  Every 30s: report progress + speed
   |<── continue: true/false ───────│
-  |                                 |
+  |                                |
   |── POST /api/work/complete ────>│  Report chunk done
   |<── accepted: true ─────────────│
-  |                                 |
-  |   [Loop: get next chunk]        |
+  |                                |
+  |   [Loop: get next chunk]       |
 ```
 
 ### KeyHunt Scanning
@@ -135,18 +135,18 @@ The pool uses consistency-based validation:
 ### State Machine
 
 ```
-         ┌─────────┐
-    ┌───>│  IDLE    │<──────────────────┐
-    │    └────┬─────┘                   │
-    │         │ Start                   │ Stop
+         ┌──────────┐
+    ┌───>│   IDLE   │<─────────────────┐
+    │    └────┬─────┘                  │
+    │         │ Start                  │ Stop
     │    ┌────v─────┐         ┌────────┴──┐
-    │    │ SCANNING  │──Pause─>│  PAUSED   │
+    │    │ SCANNING │──Pause─>│  PAUSED   │
     │    └────┬─────┘         └────┬──────┘
     │         │                    │ Resume
-    │         │                    │
-    │    Stop │              ┌─────v──────┐
-    └─────────┘              │  SCANNING   │
-                             └─────────────┘
+    │         │                    v
+    │    Stop │              ┌────────────┐
+    └─────────┘              │  SCANNING  │
+                             └────────────┘
 ```
 
 - **IDLE** — connected to pool, waiting for user to press Start
