@@ -30,7 +30,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-VERSION = "4.1.5"
+VERSION = "4.1.6"
 POOL_URL = "https://starnetlive.space"
 APP_NAME = "PuzzlePool"
 
