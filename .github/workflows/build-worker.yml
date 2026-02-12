@@ -143,27 +143,20 @@ jobs:
             puzzle-worker-linux
             puzzle-worker-macos
           body: |
-            ## Puzzle Pool Worker v4.2.0
+            ## Puzzle Pool Worker ${{ github.ref_name }}
 
             Download for your platform — just run it, everything is automatic:
             - **Windows**: `puzzle-worker.exe` — Double-click to run
             - **Linux**: `puzzle-worker-linux` — `chmod +x puzzle-worker-linux && ./puzzle-worker-linux`
             - **macOS**: `puzzle-worker-macos` — `chmod +x puzzle-worker-macos && ./puzzle-worker-macos`
 
-            ### What's New in v4.2.0
-            - **Modern two-column UI** — stats and controls on the left, live log stream on the right
-            - **Dark/Light theme** — toggle with moon/sun button in header, preference saved
-            - **Glass-like card design** — rounded corners, subtle borders, depth hierarchy
-            - **Animated progress bars** — smooth easing animation at ~60fps
-            - **ETA calculation** — shows estimated time remaining for current chunk
-            - **Speed bug fixes** — Current Scan speed now resets between chunks; My Stats speed shows live KeyHunt rate
-            - **Bigger fonts** — improved readability across all sections
-            - **Wider window** — 1200x900 for comfortable two-column layout
-
-            ### Previous (v4.1.6)
-            - Heartbeat race condition fix
-            - Thread safety, clean Stop, stdin isolation
-            - Registration retry with backoff
+            ### What's New in v4.2.2
+            - **AMOLED Hacker UI** — true black background with neon cyan/green/purple accents
+            - **Ghost buttons** — outline-style Start/Pause/Stop with hover-fill effects
+            - **3-section header** — logo left, live status center, settings right
+            - **Glow-bordered cards** — neon accent on controls bar and current scan
+            - **Real-time CUDA speed** — PTY-based reader for instant KeyHunt progress
+            - **Tray icon fix** — prefers puzzle logo over generated fallback
 
             ### Features
             - Start / Pause / Stop controls
