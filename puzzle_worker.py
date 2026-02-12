@@ -150,65 +150,32 @@ class CLR:
 
 
 def _make_icon_image(size=256):
-    """Generate a puzzle-piece Bitcoin icon as PIL Image."""
+    """Generate a round Bitcoin icon with transparent background as PIL Image."""
     if not HAS_TRAY:
         return None
     img = PilImage.new('RGBA', (size, size), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
 
     cx, cy = size / 2, size / 2
-    r = size * 0.42
-    tab_r = r * 0.2
-    body_r = r * 0.82
+    r = size * 0.46
 
-    # Draw puzzle piece body (rounded square with 4 tabs)
-    # Main body - rounded rectangle
-    margin = size * 0.15
-    body = [margin, margin, size - margin, size - margin]
-    corner = size * 0.08
-    d.rounded_rectangle(body, radius=corner, fill='#f7931a')
+    # Draw round background
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], fill='#f7931a')
 
-    # Top tab (outward)
-    tx = cx
-    ty = margin
-    d.ellipse([tx - tab_r, ty - tab_r * 1.2, tx + tab_r, ty + tab_r * 0.8],
-              fill='#f7931a')
-
-    # Right tab (outward)
-    rx = size - margin
-    ry = cy
-    d.ellipse([rx - tab_r * 0.8, ry - tab_r, rx + tab_r * 1.2, ry + tab_r],
-              fill='#f7931a')
-
-    # Bottom tab (inward - notch)
-    bx = cx
-    by = size - margin
-    d.ellipse([bx - tab_r, by - tab_r * 0.8, bx + tab_r, by + tab_r * 1.2],
-              fill='#f7931a')
-    # Cut the notch by drawing a darker ellipse inside
-    d.ellipse([bx - tab_r * 0.75, by - tab_r * 0.3, bx + tab_r * 0.75, by + tab_r * 0.9],
-              fill='#e67e00')
-
-    # Left tab (inward - notch)
-    lx = margin
-    ly = cy
-    d.ellipse([lx - tab_r * 1.2, ly - tab_r, lx + tab_r * 0.8, ly + tab_r],
-              fill='#f7931a')
-    d.ellipse([lx - tab_r * 0.9, ly - tab_r * 0.75, lx + tab_r * 0.3, ly + tab_r * 0.75],
-              fill='#e67e00')
-
-    # Gradient overlay (subtle shine)
+    # Subtle gradient overlay (shine)
     overlay = PilImage.new('RGBA', (size, size), (0, 0, 0, 0))
     od = ImageDraw.Draw(overlay)
-    for i in range(size // 3):
-        alpha = int(40 * (1 - i / (size // 3)))
-        od.line([(0, i), (size, i)], fill=(255, 255, 255, alpha))
+    for i in range(int(r)):
+        alpha = int(35 * (1 - i / r))
+        y = cy - r + i
+        # Clip to circle
+        dx = (r ** 2 - (i - r) ** 2) ** 0.5 if i < 2 * r else 0
+        od.line([(cx - dx, y), (cx + dx, y)], fill=(255, 255, 255, alpha))
     img = PilImage.alpha_composite(img, overlay)
     d = ImageDraw.Draw(img)
 
-    # Draw Bitcoin symbol
-    sym = "\u20bf"
-    font_size = int(size * 0.45)
+    # Draw Bitcoin "B" symbol
+    font_size = int(size * 0.52)
     font = None
     try:
         font = ImageFont.truetype("arial.ttf", font_size)
@@ -225,12 +192,9 @@ def _make_icon_image(size=256):
                 continue
 
     if font:
-        # Shadow
-        d.text((cx + 2, cy + 2), sym, fill=(0, 0, 0, 80), font=font, anchor='mm')
-        # Main text
-        d.text((cx, cy), sym, fill='white', font=font, anchor='mm')
+        d.text((cx + 2, cy + 2), "B", fill=(0, 0, 0, 80), font=font, anchor='mm')
+        d.text((cx, cy), "B", fill='white', font=font, anchor='mm')
     else:
-        # Fallback without font
         d.text((cx - size * 0.08, cy - size * 0.12), "B", fill='white')
 
     return img
@@ -338,7 +302,7 @@ class Installer:
             bdir = Path(__file__).parent
         for name, dest in [("icon.ico", ICON_FILE), ("icon.png", ICON_PNG)]:
             src = bdir / name
-            if src.exists() and not dest.exists():
+            if src.exists():
                 try:
                     shutil.copy2(str(src), str(dest))
                 except Exception:
@@ -920,6 +884,14 @@ class WorkerGUI:
         # Animation state
         self._anim_scan = 0.0
         self._anim_pool = 0.0
+        self._anim_id = None
+
+        # Log flush state
+        self._log_flushed_count = 0
+        self._log_flush_pending = False
+
+        # Change detection cache for _refresh
+        self._prev = {}
 
         # Window
         self.root = ctk.CTk()
@@ -937,6 +909,22 @@ class WorkerGUI:
         if icon_path:
             try:
                 self.root.iconbitmap(icon_path)
+            except Exception:
+                pass
+        # Cross-platform: use iconphoto with PNG (works on Linux where iconbitmap often fails)
+        png_path = None
+        if ICON_PNG.exists():
+            png_path = str(ICON_PNG)
+        elif IS_FROZEN:
+            bundled_png = Path(sys._MEIPASS) / "icon.png"
+            if bundled_png.exists():
+                png_path = str(bundled_png)
+        if png_path:
+            try:
+                import tkinter as tk
+                icon_img = tk.PhotoImage(file=png_path)
+                self.root.iconphoto(True, icon_img)
+                self._icon_photo_ref = icon_img  # prevent GC
             except Exception:
                 pass
 
@@ -1000,12 +988,23 @@ class WorkerGUI:
     def _card(self, parent, alt=False, **kw):
         """Create a glass-style card frame."""
         t = self.theme
-        return ctk.CTkFrame(parent, fg_color=t["card_alt" if alt else "card"],
-                            border_color=t["card_border"], border_width=1,
-                            corner_radius=12, **kw)
+        frame = ctk.CTkFrame(parent, fg_color=t["card_alt" if alt else "card"],
+                             border_color=t["card_border"], border_width=1,
+                             corner_radius=12, **kw)
+        if alt:
+            self._themed_cards_alt.append(frame)
+        else:
+            self._themed_cards.append(frame)
+        return frame
 
     def _build_main_screen(self):
         t = self.theme
+        # Theme tracking lists
+        self._themed_cards = []
+        self._themed_cards_alt = []
+        self._themed_dim_labels = []
+        self._themed_gold_labels = []
+
         self._main_frame = ctk.CTkFrame(self.root, fg_color="transparent")
         self._main_frame.pack(fill="both", expand=True)
         m = self._main_frame
@@ -1013,6 +1012,7 @@ class WorkerGUI:
         # ── Header ──
         hdr = ctk.CTkFrame(m, fg_color=t["header"], corner_radius=12,
                            border_color=t["card_border"], border_width=1, height=56)
+        self._header_frame = hdr
         hdr.pack(fill="x", padx=10, pady=(8, 6))
         hdr.pack_propagate(False)
         self._lbl_btc = ctk.CTkLabel(hdr, text="\u29c9", font=("", 24, "bold"),
@@ -1067,7 +1067,9 @@ class WorkerGUI:
             command=self._on_stop, state="disabled")
         self._btn_stop.pack(side="left", padx=(0, 16))
 
-        ctk.CTkLabel(ci, text="Mode:", font=("", 11), text_color=t["dim"]).pack(side="left", padx=(0, 4))
+        _lbl = ctk.CTkLabel(ci, text="Mode:", font=("", 11), text_color=t["dim"])
+        _lbl.pack(side="left", padx=(0, 4))
+        self._themed_dim_labels.append(_lbl)
         cfg = _load_config()
         mode_map = {"normal": "Normal", "eco": "Eco"}
         self._var_mode = ctk.StringVar(value=mode_map.get(cfg.get("mode", "normal"), "Normal"))
@@ -1079,7 +1081,9 @@ class WorkerGUI:
             corner_radius=8, command=self._on_mode_change)
         self._dd_mode.pack(side="left", padx=(0, 12))
 
-        ctk.CTkLabel(ci, text="Device:", font=("", 11), text_color=t["dim"]).pack(side="left", padx=(0, 4))
+        _lbl = ctk.CTkLabel(ci, text="Device:", font=("", 11), text_color=t["dim"])
+        _lbl.pack(side="left", padx=(0, 4))
+        self._themed_dim_labels.append(_lbl)
         device_map = {"gpu": "GPU", "cpu": "CPU", "cpu_gpu": "CPU+GPU"}
         self._var_device = ctk.StringVar(value=device_map.get(cfg.get("device", "gpu"), "GPU"))
         self._dd_device = ctk.CTkOptionMenu(
@@ -1111,22 +1115,30 @@ class WorkerGUI:
         si.pack(fill="x", padx=14, pady=10)
         r1 = ctk.CTkFrame(si, fg_color="transparent")
         r1.pack(fill="x")
-        ctk.CTkLabel(r1, text="STATUS", font=("", 12), text_color=t["dim"]).pack(side="left")
+        _lbl = ctk.CTkLabel(r1, text="STATUS", font=("", 12), text_color=t["dim"])
+        _lbl.pack(side="left")
+        self._themed_dim_labels.append(_lbl)
         self._lbl_dot = ctk.CTkLabel(r1, text="\u25cf", font=("", 16), text_color=t["yellow"])
         self._lbl_dot.pack(side="left", padx=(10, 4))
         self._lbl_status = ctk.CTkLabel(r1, text="STARTING", font=("", 14, "bold"),
                                          text_color=t["yellow"])
         self._lbl_status.pack(side="left")
-        ctk.CTkLabel(r1, text="POOL", font=("", 12), text_color=t["dim"]).pack(side="left", padx=(32, 6))
+        _lbl = ctk.CTkLabel(r1, text="POOL", font=("", 12), text_color=t["dim"])
+        _lbl.pack(side="left", padx=(32, 6))
+        self._themed_dim_labels.append(_lbl)
         self._lbl_pool = ctk.CTkLabel(r1, text=POOL_URL.replace("https://", ""),
                                        font=("", 12, "bold"), text_color=t["cyan"])
         self._lbl_pool.pack(side="left")
         r2 = ctk.CTkFrame(si, fg_color="transparent")
         r2.pack(fill="x", pady=(5, 0))
-        ctk.CTkLabel(r2, text="WORKER", font=("", 12), text_color=t["dim"]).pack(side="left")
+        _lbl = ctk.CTkLabel(r2, text="WORKER", font=("", 12), text_color=t["dim"])
+        _lbl.pack(side="left")
+        self._themed_dim_labels.append(_lbl)
         self._lbl_worker = ctk.CTkLabel(r2, text="...", font=("", 12, "bold"), text_color=t["cyan"])
         self._lbl_worker.pack(side="left", padx=(6, 0))
-        ctk.CTkLabel(r2, text="GPU", font=("", 12), text_color=t["dim"]).pack(side="left", padx=(32, 6))
+        _lbl = ctk.CTkLabel(r2, text="GPU", font=("", 12), text_color=t["dim"])
+        _lbl.pack(side="left", padx=(32, 6))
+        self._themed_dim_labels.append(_lbl)
         self._lbl_gpu = ctk.CTkLabel(r2, text="Detecting...", font=("", 12, "bold"), text_color=t["green"])
         self._lbl_gpu.pack(side="left")
 
@@ -1135,7 +1147,9 @@ class WorkerGUI:
         scan.pack(fill="x", **pad_card)
         si2 = ctk.CTkFrame(scan, fg_color="transparent")
         si2.pack(fill="x", padx=14, pady=10)
-        ctk.CTkLabel(si2, text="CURRENT SCAN", font=("", 14, "bold"), text_color=t["gold"]).pack(anchor="w")
+        _lbl = ctk.CTkLabel(si2, text="CURRENT SCAN", font=("", 14, "bold"), text_color=t["gold"])
+        _lbl.pack(anchor="w")
+        self._themed_gold_labels.append(_lbl)
         self._lbl_chunk = ctk.CTkLabel(si2, text="Waiting for work...",
                                         font=("", 13, "bold"), text_color=t["dim"])
         self._lbl_chunk.pack(anchor="w", pady=(6, 0))
@@ -1155,7 +1169,9 @@ class WorkerGUI:
         # Speed + heartbeat + ETA row
         info_row = ctk.CTkFrame(si2, fg_color="transparent")
         info_row.pack(fill="x", pady=(8, 0))
-        ctk.CTkLabel(info_row, text="\u2665", font=("", 12), text_color=t["dim"]).pack(side="left")
+        _lbl = ctk.CTkLabel(info_row, text="\u2665", font=("", 12), text_color=t["dim"])
+        _lbl.pack(side="left")
+        self._themed_dim_labels.append(_lbl)
         self._lbl_hb_dot = ctk.CTkLabel(info_row, text="\u25cf", font=("", 10),
                                          text_color=t["vdim"])
         self._lbl_hb_dot.pack(side="left", padx=(2, 0))
@@ -1168,7 +1184,9 @@ class WorkerGUI:
                                             text_color=t["cyan"])
         self._lbl_cur_speed.pack(side="left", padx=(4, 0))
 
-        ctk.CTkLabel(info_row, text="ETA", font=("", 12), text_color=t["dim"]).pack(side="left", padx=(18, 4))
+        _lbl = ctk.CTkLabel(info_row, text="ETA", font=("", 12), text_color=t["dim"])
+        _lbl.pack(side="left", padx=(18, 4))
+        self._themed_dim_labels.append(_lbl)
         self._lbl_eta = ctk.CTkLabel(info_row, text="--", font=("", 13, "bold"),
                                       text_color=t["purple"])
         self._lbl_eta.pack(side="left")
@@ -1176,7 +1194,9 @@ class WorkerGUI:
         # Keys scanned in chunk
         key_row = ctk.CTkFrame(si2, fg_color="transparent")
         key_row.pack(fill="x", pady=(4, 0))
-        ctk.CTkLabel(key_row, text="Keys in chunk:", font=("", 12), text_color=t["dim"]).pack(side="left")
+        _lbl = ctk.CTkLabel(key_row, text="Keys in chunk:", font=("", 12), text_color=t["dim"])
+        _lbl.pack(side="left")
+        self._themed_dim_labels.append(_lbl)
         self._lbl_chunk_keys = ctk.CTkLabel(key_row, text="--", font=("", 13, "bold"),
                                              text_color=t["accent"])
         self._lbl_chunk_keys.pack(side="left", padx=(6, 0))
@@ -1192,13 +1212,17 @@ class WorkerGUI:
         ms_card.grid(row=0, column=0, sticky="nsew", padx=(0, 3))
         msi = ctk.CTkFrame(ms_card, fg_color="transparent")
         msi.pack(fill="x", padx=12, pady=10)
-        ctk.CTkLabel(msi, text="MY STATS", font=("", 14, "bold"), text_color=t["gold"]).pack(anchor="w")
+        _lbl = ctk.CTkLabel(msi, text="MY STATS", font=("", 14, "bold"), text_color=t["gold"])
+        _lbl.pack(anchor="w")
+        self._themed_gold_labels.append(_lbl)
         self._sv = {}
         for k, lb in [("chunks", "Chunks"), ("keys", "Keys"), ("speed", "Speed"), ("uptime", "Uptime")]:
             row = ctk.CTkFrame(msi, fg_color="transparent")
             row.pack(anchor="w", fill="x", pady=2)
-            ctk.CTkLabel(row, text=lb, font=("", 12), text_color=t["dim"],
-                         width=70, anchor="w").pack(side="left")
+            _lbl = ctk.CTkLabel(row, text=lb, font=("", 12), text_color=t["dim"],
+                                width=70, anchor="w")
+            _lbl.pack(side="left")
+            self._themed_dim_labels.append(_lbl)
             v = ctk.CTkLabel(row, text="--", font=("", 13, "bold"), text_color=t["text"])
             v.pack(side="left")
             self._sv[k] = v
@@ -1208,26 +1232,34 @@ class WorkerGUI:
         sys_card.grid(row=0, column=1, sticky="nsew", padx=(3, 0))
         syi = ctk.CTkFrame(sys_card, fg_color="transparent")
         syi.pack(fill="x", padx=12, pady=10)
-        ctk.CTkLabel(syi, text="SYSTEM", font=("", 14, "bold"), text_color=t["gold"]).pack(anchor="w")
+        _lbl = ctk.CTkLabel(syi, text="SYSTEM", font=("", 14, "bold"), text_color=t["gold"])
+        _lbl.pack(anchor="w")
+        self._themed_gold_labels.append(_lbl)
         for k, lb in [("gpu", "GPU"), ("vram", "VRAM"), ("cpu", "CPU"), ("ram", "RAM")]:
             row = ctk.CTkFrame(syi, fg_color="transparent")
             row.pack(anchor="w", fill="x", pady=2)
-            ctk.CTkLabel(row, text=lb, font=("", 12), text_color=t["dim"],
-                         width=60, anchor="w").pack(side="left")
+            _lbl = ctk.CTkLabel(row, text=lb, font=("", 12), text_color=t["dim"],
+                                width=60, anchor="w")
+            _lbl.pack(side="left")
+            self._themed_dim_labels.append(_lbl)
             v = ctk.CTkLabel(row, text="--", font=("", 13, "bold"), text_color=t["text"])
             v.pack(side="left")
             self._sv[k] = v
 
         # ── LEFT: Pool Network card ──
         pf = self._card(left)
-        pf.pack(fill="x", **pad_card)
+        pf.pack(fill="both", expand=True, **pad_card)
         si4 = ctk.CTkFrame(pf, fg_color="transparent")
         si4.pack(fill="x", padx=14, pady=10)
-        ctk.CTkLabel(si4, text="POOL NETWORK", font=("", 14, "bold"), text_color=t["gold"]).pack(anchor="w")
+        _lbl = ctk.CTkLabel(si4, text="POOL NETWORK", font=("", 14, "bold"), text_color=t["gold"])
+        _lbl.pack(anchor="w")
+        self._themed_gold_labels.append(_lbl)
         pr = ctk.CTkFrame(si4, fg_color="transparent")
         pr.pack(fill="x", pady=(4, 0))
         for k, lb in [("p_workers", "Workers"), ("p_speed", "Speed"), ("p_eta", "ETA")]:
-            ctk.CTkLabel(pr, text=lb, font=("", 12), text_color=t["dim"]).pack(side="left")
+            _lbl = ctk.CTkLabel(pr, text=lb, font=("", 12), text_color=t["dim"])
+            _lbl.pack(side="left")
+            self._themed_dim_labels.append(_lbl)
             v = ctk.CTkLabel(pr, text="--", font=("", 13, "bold"), text_color=t["text"])
             v.pack(side="left", padx=(4, 20))
             self._sv[k] = v
@@ -1242,10 +1274,14 @@ class WorkerGUI:
         self._lbl_ppct.pack(side="right", padx=(8, 0))
         pr2 = ctk.CTkFrame(si4, fg_color="transparent")
         pr2.pack(fill="x", pady=(4, 0))
-        ctk.CTkLabel(pr2, text="Scanned", font=("", 12), text_color=t["dim"]).pack(side="left")
+        _lbl = ctk.CTkLabel(pr2, text="Scanned", font=("", 12), text_color=t["dim"])
+        _lbl.pack(side="left")
+        self._themed_dim_labels.append(_lbl)
         self._sv["p_sc"] = ctk.CTkLabel(pr2, text="--", font=("", 13, "bold"), text_color=t["accent"])
         self._sv["p_sc"].pack(side="left", padx=(4, 20))
-        ctk.CTkLabel(pr2, text="Remaining", font=("", 12), text_color=t["dim"]).pack(side="left")
+        _lbl = ctk.CTkLabel(pr2, text="Remaining", font=("", 12), text_color=t["dim"])
+        _lbl.pack(side="left")
+        self._themed_dim_labels.append(_lbl)
         self._sv["p_rm"] = ctk.CTkLabel(pr2, text="--", font=("", 13, "bold"), text_color=t["blue"])
         self._sv["p_rm"].pack(side="left", padx=(4, 0))
         self._lbl_found = ctk.CTkLabel(si4, text="", font=("", 14, "bold"), text_color=t["green"])
@@ -1254,8 +1290,10 @@ class WorkerGUI:
         # ── RIGHT: Live Stream log ──
         log_card = self._card(right_col)
         log_card.pack(fill="both", expand=True, pady=(0, 5))
-        ctk.CTkLabel(log_card, text="LIVE STREAM", font=("", 14, "bold"),
-                     text_color=t["gold"]).pack(anchor="w", padx=14, pady=(10, 0))
+        _lbl = ctk.CTkLabel(log_card, text="LIVE STREAM", font=("", 14, "bold"),
+                            text_color=t["gold"])
+        _lbl.pack(anchor="w", padx=14, pady=(10, 0))
+        self._themed_gold_labels.append(_lbl)
         mono = "Consolas" if IS_WIN else "monospace"
         self._lb = ctk.CTkTextbox(log_card, font=(mono, 11), fg_color=t["log_bg"],
                                    text_color=t["dim"], corner_radius=8, state="disabled")
@@ -1269,16 +1307,18 @@ class WorkerGUI:
             tw.tag_config(tag, foreground=c)
 
         # Dashboard link under log
-        lk = ctk.CTkLabel(right_col, text="Dashboard: https://starnetlive.space",
-                           font=("", 12), text_color=t["cyan"], cursor="hand2")
-        lk.pack(anchor="w", padx=4, pady=(0, 2))
-        lk.bind("<Button-1>", lambda e: __import__("webbrowser").open(POOL_URL))
+        self._lbl_dash = ctk.CTkLabel(right_col, text="Dashboard: https://starnetlive.space",
+                                       font=("", 12), text_color=t["cyan"], cursor="hand2")
+        self._lbl_dash.pack(anchor="w", padx=4, pady=(0, 2))
+        self._lbl_dash.bind("<Button-1>", lambda e: __import__("webbrowser").open(POOL_URL))
 
         # ── Footer ──
         ft = ctk.CTkFrame(m, fg_color="transparent", height=28)
         ft.pack(fill="x", padx=10, pady=(0, 4))
-        ctk.CTkLabel(ft, text="Close = minimize to tray", font=("", 11),
-                     text_color=t["dim"]).pack(side="right")
+        _lbl = ctk.CTkLabel(ft, text="Close = minimize to tray", font=("", 11),
+                            text_color=t["dim"])
+        _lbl.pack(side="right")
+        self._themed_dim_labels.append(_lbl)
 
     # ────────── Theme toggle ──────────
 
@@ -1294,31 +1334,115 @@ class WorkerGUI:
         }
         _save_config({"theme": self.theme_name})
         ctk.set_appearance_mode("light" if self.theme_name == "light" else "dark")
-        # Rebuild UI
-        was_installed = self.install_done
-        self._main_frame.destroy()
-        self._build_main_screen()
-        if was_installed:
-            self._main_frame.pack(fill="both", expand=True)
-            self._refresh()
-        else:
-            self._main_frame.pack_forget()
-        self.root.configure(fg_color=self.theme["bg"])
-        self._btn_theme.configure(text="\u263e" if self.theme_name == "dark" else "\u2600")
+        self._prev.clear()  # force _refresh to re-apply all values with new colors
+        self._apply_theme()
         self.log(f"Theme: {self.theme_name}", CYAN)
+
+    def _apply_theme(self):
+        """Update all widget colors in-place — no destroy/rebuild."""
+        t = self.theme
+        self.root.configure(fg_color=t["bg"])
+
+        # Update all tracked card frames
+        for frame in self._themed_cards:
+            try:
+                frame.configure(fg_color=t["card"], border_color=t["card_border"])
+            except Exception:
+                pass
+        for frame in self._themed_cards_alt:
+            try:
+                frame.configure(fg_color=t["card_alt"], border_color=t["card_border"])
+            except Exception:
+                pass
+
+        # Header
+        try:
+            self._header_frame.configure(fg_color=t["header"], border_color=t["card_border"])
+        except Exception:
+            pass
+
+        # Theme button icon
+        self._btn_theme.configure(
+            text="\u263e" if self.theme_name == "dark" else "\u2600",
+            fg_color=t["vdim"], hover_color=t["dim"], text_color=t["text"])
+        self._btn_settings.configure(
+            fg_color=t["vdim"], hover_color=t["dim"], text_color=t["text"])
+
+        # Control bar dropdowns
+        try:
+            self._dd_mode.configure(
+                fg_color=t["input_bg"], button_color=t["accent"],
+                dropdown_fg_color=t["card"], text_color=t["text"])
+            self._dd_device.configure(
+                fg_color=t["input_bg"], button_color=t["accent"],
+                dropdown_fg_color=t["card"], text_color=t["text"])
+        except Exception:
+            pass
+
+        # Progress bars
+        self._pb_scan.configure(progress_color=t["accent"], fg_color=t["progress_bg"])
+        self._pb_pool.configure(progress_color=t["green"], fg_color=t["progress_bg"])
+
+        # Log textbox
+        self._lb.configure(fg_color=t["log_bg"], text_color=t["dim"])
+        tw = self._lb._textbox
+        for tag, c in [("t_green", t["green"]), ("t_red", t["red"]),
+                       ("t_yellow", t["yellow"]), ("t_cyan", t["cyan"]),
+                       ("t_blue", t["blue"]), ("t_purple", t["purple"]),
+                       ("t_dim", t["dim"]), ("t_default", t["text"]),
+                       ("t_time", t["vdim"])]:
+            tw.tag_config(tag, foreground=c)
+
+        # Re-flush log to apply new tag colors
+        self._log_flushed_count = 0
+        self._flush_log()
+
+        # Update all dim labels and themed labels
+        for lbl in self._themed_dim_labels:
+            try:
+                lbl.configure(text_color=t["dim"])
+            except Exception:
+                pass
+        for lbl in self._themed_gold_labels:
+            try:
+                lbl.configure(text_color=t["gold"])
+            except Exception:
+                pass
+
+        # Dashboard link
+        try:
+            self._lbl_dash.configure(text_color=t["cyan"])
+        except Exception:
+            pass
 
     # ────────── Animated progress ──────────
 
-    def _animate_progress(self, bar, target, attr):
-        current = getattr(self, attr)
-        if abs(target - current) < 0.001:
-            return
-        step = (target - current) * 0.15
-        new = current + step
-        setattr(self, attr, new)
-        bar.set(max(0, min(1, new)))
-        if abs(target - new) > 0.001:
-            self.root.after(16, lambda: self._animate_progress(bar, target, attr))
+    def _animate_tick(self):
+        """Single animation loop for all progress bars — runs at ~60fps only when needed."""
+        self._anim_id = None
+        changed = False
+
+        # Scan bar
+        scan_target = max(0, min(1, self.chunk_progress / 100))
+        if abs(scan_target - self._anim_scan) > 0.001:
+            self._anim_scan += (scan_target - self._anim_scan) * 0.15
+            self._pb_scan.set(max(0, min(1, self._anim_scan)))
+            changed = True
+
+        # Pool bar
+        pool_target = max(0, min(1, self.pool_progress / 100))
+        if abs(pool_target - self._anim_pool) > 0.001:
+            self._anim_pool += (pool_target - self._anim_pool) * 0.15
+            self._pb_pool.set(max(0, min(1, self._anim_pool)))
+            changed = True
+
+        if changed:
+            self._anim_id = self.root.after(16, self._animate_tick)
+
+    def _start_animation(self):
+        """Start the animation loop if not already running."""
+        if self._anim_id is None:
+            self._anim_id = self.root.after(16, self._animate_tick)
 
     # ────────── Control handlers ──────────
 
@@ -1440,24 +1564,60 @@ class WorkerGUI:
             self.log_lines.append((ts, msg, tag))
             if len(self.log_lines) > 200:
                 self.log_lines.pop(0)
-        try:
-            self.root.after_idle(self._flush_log)
-        except Exception:
-            pass
+        if not self._log_flush_pending:
+            self._log_flush_pending = True
+            try:
+                self.root.after(50, self._flush_log)
+            except Exception:
+                self._log_flush_pending = False
 
     def _flush_log(self):
+        self._log_flush_pending = False
         with self._log_lock:
             lines = list(self.log_lines)
+        total = len(lines)
+        visible = lines[-50:]
+        visible_start = max(0, total - 50)
+        new_start = max(visible_start, self._log_flushed_count)
+        new_lines = lines[new_start:]
+
         tw = self._lb._textbox
         self._lb.configure(state="normal")
-        tw.delete("1.0", "end")
-        for ts, msg, tag in lines[-50:]:
-            tw.insert("end", f"[{ts}] ", "t_time")
-            tw.insert("end", f"{msg}\n", tag)
+
+        if new_start <= visible_start and self._log_flushed_count > 0:
+            # Buffer scrolled — need to trim old lines from top
+            tw.delete("1.0", "end")
+            for ts, msg, tag in visible:
+                tw.insert("end", f"[{ts}] ", "t_time")
+                tw.insert("end", f"{msg}\n", tag)
+        elif self._log_flushed_count == 0:
+            # First flush — full write
+            tw.delete("1.0", "end")
+            for ts, msg, tag in visible:
+                tw.insert("end", f"[{ts}] ", "t_time")
+                tw.insert("end", f"{msg}\n", tag)
+        else:
+            # Incremental — only append new lines
+            for ts, msg, tag in new_lines:
+                tw.insert("end", f"[{ts}] ", "t_time")
+                tw.insert("end", f"{msg}\n", tag)
+            # Trim excess lines from top (keep 50)
+            line_count = int(tw.index("end-1c").split(".")[0])
+            if line_count > 51:
+                tw.delete("1.0", f"{line_count - 50}.0")
+
+        self._log_flushed_count = total
         tw.see("end")
         self._lb.configure(state="disabled")
 
     # ────────── Refresh loop ──────────
+
+    def _chg(self, key, value):
+        """Return True if value changed from last call, and cache it."""
+        if self._prev.get(key) != value:
+            self._prev[key] = value
+            return True
+        return False
 
     def _refresh(self):
         if not self.running:
@@ -1465,92 +1625,136 @@ class WorkerGUI:
         self._tick += 1
         t = self.theme
         hx = self.TAG_MAP.get(self.status_color, t["text"])
-        self._lbl_status.configure(text=self.status, text_color=hx)
+
+        if self._chg("status", (self.status, hx)):
+            self._lbl_status.configure(text=self.status, text_color=hx)
         show = self._tick % 4 < 3 or self.status != "SCANNING"
-        self._lbl_dot.configure(text_color=hx if show else t["card"])
-        self._lbl_worker.configure(text=self.worker_name or "...")
-        self._lbl_gpu.configure(text=self.gpu_name[:40])
+        dot_clr = hx if show else t["card"]
+        if self._chg("dot", dot_clr):
+            self._lbl_dot.configure(text_color=dot_clr)
+        wn = self.worker_name or "..."
+        if self._chg("worker", wn):
+            self._lbl_worker.configure(text=wn)
+        gn = self.gpu_name[:40]
+        if self._chg("gpu", gn):
+            self._lbl_gpu.configure(text=gn)
 
-        if self.current_chunk is not None:
-            self._lbl_chunk.configure(text=f"Chunk #{self.current_chunk:,}", text_color=t["accent"])
-            self._lbl_range.configure(text=f"{self.chunk_range_start}  \u2192  {self.chunk_range_end}")
-        else:
-            self._lbl_chunk.configure(text="Waiting for work...", text_color=t["dim"])
-            self._lbl_range.configure(text="")
+        cc = self.current_chunk
+        if self._chg("chunk", cc):
+            if cc is not None:
+                self._lbl_chunk.configure(text=f"Chunk #{cc:,}", text_color=t["accent"])
+            else:
+                self._lbl_chunk.configure(text="Waiting for work...", text_color=t["dim"])
 
-        # Animated scan progress
-        scan_target = max(0, min(1, self.chunk_progress / 100))
-        self._animate_progress(self._pb_scan, scan_target, "_anim_scan")
-        self._lbl_pct.configure(text=f"{self.chunk_progress:.1f}%")
+        rng = (self.chunk_range_start, self.chunk_range_end)
+        if self._chg("range", rng):
+            if cc is not None:
+                self._lbl_range.configure(text=f"{rng[0]}  \u2192  {rng[1]}")
+            else:
+                self._lbl_range.configure(text="")
+
+        # Kick animation loop (handles both scan + pool bars)
+        self._start_animation()
+
+        pct_txt = f"{self.chunk_progress:.1f}%"
+        if self._chg("pct", pct_txt):
+            self._lbl_pct.configure(text=pct_txt)
 
         # Heartbeat
-        if self.heartbeat_ok:
-            ago = self.last_heartbeat_ago
-            self._lbl_hb_dot.configure(text_color=t["green"])
-            self._lbl_hb_text.configure(text=f"{ago:.0f}s ago", text_color=t["green"])
-        else:
-            self._lbl_hb_dot.configure(text_color=t["vdim"])
-            self._lbl_hb_text.configure(text="--", text_color=t["dim"])
+        hb_key = (self.heartbeat_ok, int(self.last_heartbeat_ago))
+        if self._chg("hb", hb_key):
+            if self.heartbeat_ok:
+                self._lbl_hb_dot.configure(text_color=t["green"])
+                self._lbl_hb_text.configure(text=f"{self.last_heartbeat_ago:.0f}s ago", text_color=t["green"])
+            else:
+                self._lbl_hb_dot.configure(text_color=t["vdim"])
+                self._lbl_hb_text.configure(text="--", text_color=t["dim"])
 
         # Speed
-        if self.current_speed > 0:
-            self._lbl_cur_speed.configure(text=self._fs(self.current_speed))
-        else:
-            self._lbl_cur_speed.configure(text="--")
+        spd_txt = self._fs(self.current_speed) if self.current_speed > 0 else "--"
+        if self._chg("speed", spd_txt):
+            self._lbl_cur_speed.configure(text=spd_txt)
 
         # ETA + keys in chunk
-        if self.current_chunk is not None and self.chunk_range_start and self.chunk_range_end:
+        if cc is not None and self.chunk_range_start and self.chunk_range_end:
             try:
                 rs = int(self.chunk_range_start, 16)
                 re_ = int(self.chunk_range_end, 16)
                 chunk_size = re_ - rs + 1
                 keys_done = int(chunk_size * self.chunk_progress / 100)
-                self._lbl_chunk_keys.configure(text=self._fk(keys_done))
+                keys_txt = self._fk(keys_done)
                 if self.current_speed > 0:
                     remaining = chunk_size * (100 - self.chunk_progress) / 100
-                    eta_s = remaining / self.current_speed
-                    self._lbl_eta.configure(text=self._fd(eta_s))
+                    eta_txt = self._fd(remaining / self.current_speed)
                 else:
-                    self._lbl_eta.configure(text="--")
+                    eta_txt = "--"
             except (ValueError, ZeroDivisionError):
-                self._lbl_eta.configure(text="--")
-                self._lbl_chunk_keys.configure(text="--")
+                eta_txt = "--"
+                keys_txt = "--"
         else:
-            self._lbl_eta.configure(text="--")
-            self._lbl_chunk_keys.configure(text="--")
+            eta_txt = "--"
+            keys_txt = "--"
+        if self._chg("eta", eta_txt):
+            self._lbl_eta.configure(text=eta_txt)
+        if self._chg("keys_c", keys_txt):
+            self._lbl_chunk_keys.configure(text=keys_txt)
 
         # My Stats
         el = time.time() - self.session_start
-        spd = self.current_speed
         ct = f"{self.chunks_done} done"
-        if self.chunks_accepted: ct += f"  {self.chunks_accepted} ok"
-        self._sv["chunks"].configure(text=ct, text_color=t["green"])
-        self._sv["keys"].configure(text=self._fk(self.keys_scanned), text_color=t["accent"])
-        self._sv["speed"].configure(text=self._fs(spd) if spd > 0 else "--", text_color=t["cyan"])
-        self._sv["uptime"].configure(text=self._fd(el), text_color=t["blue"])
+        if self.chunks_accepted:
+            ct += f"  {self.chunks_accepted} ok"
+        if self._chg("s_chunks", ct):
+            self._sv["chunks"].configure(text=ct, text_color=t["green"])
+        keys_txt2 = self._fk(self.keys_scanned)
+        if self._chg("s_keys", keys_txt2):
+            self._sv["keys"].configure(text=keys_txt2, text_color=t["accent"])
+        spd2 = self._fs(self.current_speed) if self.current_speed > 0 else "--"
+        if self._chg("s_speed", spd2):
+            self._sv["speed"].configure(text=spd2, text_color=t["cyan"])
+        up_txt = self._fd(el)
+        if self._chg("s_up", up_txt):
+            self._sv["uptime"].configure(text=up_txt, text_color=t["blue"])
 
         # System
-        self._sv["gpu"].configure(
-            text=f"{self.gpu_usage}%  {self.gpu_temp}\u00b0C  {self.gpu_power}W",
-            text_color=t["green"] if self.gpu_usage > 0 else t["dim"])
-        self._sv["vram"].configure(text=f"{self.gpu_mem_used}/{self.gpu_mem_total} MB", text_color=t["cyan"])
-        self._sv["cpu"].configure(text=f"{self.cpu_usage}%", text_color=t["green"])
-        self._sv["ram"].configure(text=f"{self.ram_used}/{self.ram_total} GB", text_color=t["cyan"])
+        gpu_txt = f"{self.gpu_usage}%  {self.gpu_temp}\u00b0C  {self.gpu_power}W"
+        gpu_clr = t["green"] if self.gpu_usage > 0 else t["dim"]
+        if self._chg("sys_gpu", (gpu_txt, gpu_clr)):
+            self._sv["gpu"].configure(text=gpu_txt, text_color=gpu_clr)
+        vram_txt = f"{self.gpu_mem_used}/{self.gpu_mem_total} MB"
+        if self._chg("sys_vram", vram_txt):
+            self._sv["vram"].configure(text=vram_txt, text_color=t["cyan"])
+        cpu_txt = f"{self.cpu_usage}%"
+        if self._chg("sys_cpu", cpu_txt):
+            self._sv["cpu"].configure(text=cpu_txt, text_color=t["green"])
+        ram_txt = f"{self.ram_used}/{self.ram_total} GB"
+        if self._chg("sys_ram", ram_txt):
+            self._sv["ram"].configure(text=ram_txt, text_color=t["cyan"])
 
         # Pool
-        self._sv["p_workers"].configure(text=str(self.pool_active), text_color=t["green"])
-        self._sv["p_speed"].configure(text=self._fs(self.pool_speed), text_color=t["cyan"])
-        self._sv["p_eta"].configure(text=self._fd(self.pool_eta), text_color=t["purple"])
-        pool_target = max(0, min(1, self.pool_progress / 100))
-        self._animate_progress(self._pb_pool, pool_target, "_anim_pool")
-        self._lbl_ppct.configure(text=f"{self.pool_progress:.6f}%")
-        self._sv["p_sc"].configure(text=self._fk(self.pool_total_keys))
-        self._sv["p_rm"].configure(text=self._fk(self.pool_keys_remaining))
-
-        if self.pool_found > 0:
-            self._lbl_found.configure(text=f"\u2605 {self.pool_found} KEY(S) FOUND! \u2605")
-        else:
-            self._lbl_found.configure(text="")
+        pw = str(self.pool_active)
+        if self._chg("p_w", pw):
+            self._sv["p_workers"].configure(text=pw, text_color=t["green"])
+        ps = self._fs(self.pool_speed)
+        if self._chg("p_s", ps):
+            self._sv["p_speed"].configure(text=ps, text_color=t["cyan"])
+        pe = self._fd(self.pool_eta)
+        if self._chg("p_e", pe):
+            self._sv["p_eta"].configure(text=pe, text_color=t["purple"])
+        pp = f"{self.pool_progress:.6f}%"
+        if self._chg("p_pct", pp):
+            self._lbl_ppct.configure(text=pp)
+        psc = self._fk(self.pool_total_keys)
+        if self._chg("p_sc", psc):
+            self._sv["p_sc"].configure(text=psc)
+        prm = self._fk(self.pool_keys_remaining)
+        if self._chg("p_rm", prm):
+            self._sv["p_rm"].configure(text=prm)
+        if self._chg("p_found", self.pool_found):
+            if self.pool_found > 0:
+                self._lbl_found.configure(text=f"\u2605 {self.pool_found} KEY(S) FOUND! \u2605")
+            else:
+                self._lbl_found.configure(text="")
 
         self.root.after(250, self._refresh)
 
