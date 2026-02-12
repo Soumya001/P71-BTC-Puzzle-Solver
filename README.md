@@ -162,6 +162,44 @@ Worker                             Pool Server
 
 Heartbeats every 30s. If missed for 90s, the chunk is reassigned. No work is ever lost.
 
+### Worker State Machine
+
+```
+              +----------+
+         +--->|   IDLE   |<-----------------+
+         |    +----+-----+                  |
+         |         | Start                  | Stop
+         |    +----v-----+        +--------+--+
+         |    | SCANNING +--Pause>|  PAUSED   |
+         |    +----+-----+        +----+------+
+         |         |                   | Resume
+         |    Stop |                   v
+         |         |             +----------+
+         +---------+             | SCANNING |
+                                 +----------+
+```
+
+**IDLE** — waiting for Start | **SCANNING** — running KeyHunt | **PAUSED** — waiting for Resume
+**ECO COOLDOWN** — between chunks | **WAITING** — no work available | **RECONNECTING** — lost connection
+
+### Configuration
+
+All config stored in `config.json` inside the install directory:
+
+```json
+{
+  "worker_name": "worker-MyPC",
+  "gpu_id": 0,
+  "device": "gpu",
+  "cpu_threads": 4,
+  "mode": "normal",
+  "eco_cooldown": 60,
+  "api_key": "auto-generated-on-first-run"
+}
+```
+
+Edit directly or use the Settings dialog (gear icon).
+
 ---
 
 ## FAQ
