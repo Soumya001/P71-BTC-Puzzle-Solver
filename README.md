@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="BTC_Puzzle_Pool_Logo.svg" alt="BTC Puzzle Pool Logo" width="180"/>
+  <img src="icon.png" alt="BTC Puzzle Pool Logo" width="180"/>
 </p>
 
 <h1 align="center">Bitcoin Puzzle #71 — Pool Worker v4.2.0</h1>
