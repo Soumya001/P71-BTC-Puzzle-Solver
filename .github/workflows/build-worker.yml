@@ -23,9 +23,9 @@ jobs:
       - name: Build Windows EXE
         run: >
           pyinstaller --onefile --name puzzle-worker --windowed
-          --icon=icon.ico
-          --add-data "icon.ico;."
-          --add-data "icon.png;."
+          --icon=assets/icons/icon.ico
+          --add-data "assets/icons/icon.ico;."
+          --add-data "assets/icons/icon.png;."
           --hidden-import=customtkinter
           --hidden-import=pystray
           --hidden-import=pystray._win32
@@ -59,8 +59,8 @@ jobs:
       - name: Build Linux binary
         run: >
           pyinstaller --onefile --name puzzle-worker-linux --strip --windowed
-          --add-data "icon.ico:."
-          --add-data "icon.png:."
+          --add-data "assets/icons/icon.ico:."
+          --add-data "assets/icons/icon.png:."
           --hidden-import=customtkinter
           --hidden-import=pystray
           --hidden-import=pystray._xorg
@@ -94,8 +94,8 @@ jobs:
       - name: Build macOS binary
         run: >
           pyinstaller --onefile --name puzzle-worker-macos --windowed
-          --add-data "icon.ico:."
-          --add-data "icon.png:."
+          --add-data "assets/icons/icon.ico:."
+          --add-data "assets/icons/icon.png:."
           --hidden-import=customtkinter
           --hidden-import=pystray
           --hidden-import=pystray._darwin
