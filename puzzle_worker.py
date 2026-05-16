@@ -1896,9 +1896,9 @@ class PoolWorker:
             self._log("Loaded saved credentials", GREEN)
             return
         name = cfg.get("worker_name", f"worker-{platform.node()}")
-        attempt = 0
-        while True:
-            suffix = f" (attempt {attempt + 1})" if attempt else ""
+        max_retries = 5
+        for attempt in range(max_retries):
+            suffix = f" (attempt {attempt + 1}/{max_retries})" if attempt else ""
             self._log(f"Registering as '{name}'...{suffix}", YELLOW)
             try:
                 resp = self.api.post("/api/register", {"name": name})
@@ -1909,13 +1909,16 @@ class PoolWorker:
                 self._log(f"Registered as worker #{resp['worker_id']}", GREEN)
                 return
             except Exception as e:
-                wait = min(5 * (attempt + 1), 60)
-                self._log(f"Registration error: {e}. Retrying in {wait}s...", RED)
-                if self.ui:
-                    self.ui.status = "RECONNECTING"
-                    self.ui.status_color = RED
-                time.sleep(wait)
-                attempt += 1
+                if attempt < max_retries - 1:
+                    wait = min(5 * (attempt + 1), 60)
+                    self._log(f"Registration error: {e}. Retrying in {wait}s...", RED)
+                    if self.ui:
+                        self.ui.status = "RECONNECTING"
+                        self.ui.status_color = RED
+                    time.sleep(wait)
+                else:
+                    self._log(f"Registration failed after {max_retries} attempts: {e}", RED)
+                    raise
 
     def _heartbeat_loop(self, assignment_id, range_start, range_end, interval, stop_event):
         """Background thread: send heartbeats every `interval` seconds."""
