@@ -93,7 +93,7 @@ try:
     import pystray
     from PIL import Image as PilImage, ImageDraw, ImageFont
     HAS_TRAY = True
-except ImportError:
+except Exception:
     HAS_TRAY = False
 
 # ─── Color IDs (used by worker code for log colors) ───────────────
@@ -1872,7 +1872,7 @@ class WorkerGUI:
 
 class PoolWorker:
     def __init__(self, gpu_id=0, ui=None, device="gpu", cpu_threads=4,
-                 mode="normal", eco_cooldown=60):
+                 mode="normal", eco_cooldown=60, headless=False):
         self.gpu_id = gpu_id
         self.api = PoolAPI(POOL_URL)
         self.runner = KeyHuntRunner(str(KEYHUNT_PATH), gpu_id,
@@ -1884,10 +1884,14 @@ class PoolWorker:
         self.device = device
         self.mode = mode
         self.eco_cooldown = eco_cooldown
+        self.headless = headless
 
     def _log(self, msg, color=LGREY):
         if self.ui:
             self.ui.log(msg, color)
+        elif self.headless:
+            ts = time.strftime("%H:%M:%S")
+            print(f"[{ts}] {msg}", flush=True)
 
     def register(self):
         cfg = _load_config()
@@ -2004,12 +2008,16 @@ class PoolWorker:
         self.register()
 
         # Wait for user to press Start (initial state is idle)
-        self._user_state = "stopped"
+        # In headless mode, auto-start immediately
+        self._user_state = "running" if self.headless else "stopped"
         if self.ui:
             self.ui.status = "IDLE"
             self.ui.status_color = YELLOW
             self.ui.root.after_idle(self.ui._update_ctrl_buttons, "idle")
-        self._log("Ready. Press Start to begin scanning.", CYAN)
+        if self.headless:
+            self._log("Auto-starting in headless mode...", CYAN)
+        else:
+            self._log("Ready. Press Start to begin scanning.", CYAN)
 
         threading.Thread(target=self._stats_loop, daemon=True).start()
         threading.Thread(target=self._sys_loop, daemon=True).start()
@@ -2017,7 +2025,7 @@ class PoolWorker:
         self._fetch_pool_stats()
 
         while not (self.ui and not self.ui.running):
-            # Wait for user to start
+            # Wait for user to start (or auto-start in headless)
             while self._user_state != "running":
                 if self.ui and not self.ui.running:
                     return
@@ -2349,11 +2357,62 @@ def _bg_thread(gui):
         gui.show_install_progress(f"Error: {e}", 0)
 
 
+def _headless_thread():
+    """Run worker in terminal mode without GUI."""
+    try:
+        Installer.setup_dirs()
+        Installer.ensure_config()
+
+        if not Installer.is_ready():
+            print("Downloading KeyHunt scanning engine...")
+            if not Installer.download_keyhunt(lambda pct, err=None: print(f"  {int(pct*100)}%" if pct >= 0 else f"  Error: {err}")):
+                print("Download failed — check internet and restart")
+                return
+            print("Download complete.")
+
+        cfg = _load_config()
+        worker = PoolWorker(
+            gpu_id=cfg.get("gpu_id", 0),
+            ui=None,
+            device=cfg.get("device", "gpu"),
+            cpu_threads=cfg.get("cpu_threads", 4),
+            mode=cfg.get("mode", "normal"),
+            eco_cooldown=cfg.get("eco_cooldown", 60),
+            headless=True,
+        )
+
+        def _shutdown_handler(*_):
+            print("\nShutdown signal received. Stopping...")
+            worker.running = False
+            worker._user_state = "stopped"
+            worker.runner.kill()
+
+        signal.signal(signal.SIGINT, _shutdown_handler)
+        signal.signal(signal.SIGTERM, _shutdown_handler)
+
+        worker.run()
+    except Exception as e:
+        print(f"Fatal: {e}")
+
+
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description=f"Puzzle Pool Worker v{VERSION}")
+    parser.add_argument("--headless", "-t", action="store_true",
+                        help="Run in terminal mode without GUI")
+    args = parser.parse_args()
+
+    if args.headless:
+        print(f"\nPuzzle Pool Worker v{VERSION} — Headless Mode")
+        print(f"Pool: {POOL_URL}")
+        print("Press Ctrl+C to stop\n")
+        _headless_thread()
+        return
+
     if not HAS_GUI:
         print(f"\nPuzzle Pool Worker v{VERSION}")
-        print("GUI libraries missing. Download the standalone EXE:")
-        print("  https://github.com/Soumya001/P71-BTC-Puzzle-Solver/releases\n")
+        print("GUI libraries missing. Run with --headless for terminal mode:")
+        print(f"  python3 {sys.argv[0]} --headless\n")
         sys.exit(1)
 
     gui = WorkerGUI()
