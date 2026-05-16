@@ -32,7 +32,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-VERSION = "4.3.0"
+VERSION = "4.4.0"
 POOL_URL = "https://starnetlive.space"
 APP_NAME = "PuzzlePool"
 
@@ -1896,9 +1896,9 @@ class PoolWorker:
             self._log("Loaded saved credentials", GREEN)
             return
         name = cfg.get("worker_name", f"worker-{platform.node()}")
-        max_retries = 5
-        for attempt in range(max_retries):
-            suffix = f" (attempt {attempt + 1}/{max_retries})" if attempt else ""
+        attempt = 0
+        while True:
+            suffix = f" (attempt {attempt + 1})" if attempt else ""
             self._log(f"Registering as '{name}'...{suffix}", YELLOW)
             try:
                 resp = self.api.post("/api/register", {"name": name})
@@ -1909,15 +1909,13 @@ class PoolWorker:
                 self._log(f"Registered as worker #{resp['worker_id']}", GREEN)
                 return
             except Exception as e:
-                if attempt < max_retries - 1:
-                    wait = 5 * (attempt + 1)
-                    self._log(f"Registration error: {e}. Retrying in {wait}s...", RED)
-                    if self.ui:
-                        self.ui.status = "RECONNECTING"
-                        self.ui.status_color = RED
-                    time.sleep(wait)
-                else:
-                    raise
+                wait = min(5 * (attempt + 1), 60)
+                self._log(f"Registration error: {e}. Retrying in {wait}s...", RED)
+                if self.ui:
+                    self.ui.status = "RECONNECTING"
+                    self.ui.status_color = RED
+                time.sleep(wait)
+                attempt += 1
 
     def _heartbeat_loop(self, assignment_id, range_start, range_end, interval, stop_event):
         """Background thread: send heartbeats every `interval` seconds."""
@@ -2038,6 +2036,22 @@ class PoolWorker:
             if self.ui and not self.ui.running:
                 break
 
+    def _post_complete_with_retry(self, assignment_id, range_start, range_end, max_attempts=10):
+        """POST /api/work/complete with retry on connection failure. Returns response dict or None."""
+        payload = {"assignment_id": assignment_id, "range_start": range_start, "range_end": range_end}
+        for attempt in range(max_attempts):
+            try:
+                return self.api.post("/api/work/complete", payload)
+            except Exception as e:
+                wait = min(5 * (attempt + 1), 60)
+                self._log(f"Report error (attempt {attempt + 1}/{max_attempts}): {e}. Retry in {wait}s...", YELLOW)
+                if self.ui:
+                    self.ui.status = "RECONNECTING"
+                    self.ui.status_color = RED
+                time.sleep(wait)
+        self._log("Failed to report completion after all retries — server will reap and requeue.", RED)
+        return None
+
     def _work_loop(self):
         if self.ui:
             self.ui.status = "SCANNING"
@@ -2063,7 +2077,7 @@ class PoolWorker:
             self.runner.cpu_threads = cfg.get("cpu_threads", self.runner.cpu_threads)
             self.runner.gpu_id = cfg.get("gpu_id", self.runner.gpu_id)
 
-            # Get single assignment
+            # Get work batch from pool
             try:
                 work = self.api.get("/api/work")
             except Exception as e:
@@ -2093,120 +2107,161 @@ class PoolWorker:
                 time.sleep(5)
                 continue
 
-            # Normalize response — handle both old (chunks array) and new (flat) formats
+            # Normalize response into a list of chunks
+            chunks = []
             if "chunks" in work and isinstance(work["chunks"], list) and work["chunks"]:
-                # Old format: {status, target_address, chunks: [{chunk_id, range_start, range_end, ...}]}
-                chunk = work["chunks"][0]
-                assignment_id = work.get("assignment_id", str(chunk["chunk_id"]))
                 target = work["target_address"]
-                rs = chunk["range_start"]
-                re_ = chunk["range_end"]
-                chunk_id = chunk["chunk_id"]
                 heartbeat_interval = work.get("heartbeat_interval", 30)
+                for chunk in work["chunks"]:
+                    chunks.append({
+                        "assignment_id": chunk.get("assignment_id", str(chunk["chunk_id"])),
+                        "chunk_id": chunk["chunk_id"],
+                        "range_start": chunk["range_start"],
+                        "range_end": chunk["range_end"],
+                        "target": target,
+                        "heartbeat_interval": heartbeat_interval,
+                    })
             elif "assignment_id" in work:
-                # New format: {status, assignment_id, chunk_id, target_address, range_start, range_end, ...}
-                assignment_id = work["assignment_id"]
-                target = work["target_address"]
-                rs = work["range_start"]
-                re_ = work["range_end"]
-                chunk_id = work.get("chunk_id", 0)
-                heartbeat_interval = work.get("heartbeat_interval", 30)
+                chunks.append({
+                    "assignment_id": work["assignment_id"],
+                    "chunk_id": work.get("chunk_id", 0),
+                    "range_start": work["range_start"],
+                    "range_end": work["range_end"],
+                    "target": work["target_address"],
+                    "heartbeat_interval": work.get("heartbeat_interval", 30),
+                })
             else:
                 self._log(f"Unknown work format: {str(work)[:200]}", RED)
                 time.sleep(5)
                 continue
 
             no_work = 0
-            if self.ui:
-                self.ui.status = "SCANNING"
-                self.ui.status_color = GREEN
+            self._log(f"Got {len(chunks)} chunk(s) from pool", CYAN)
 
-            # Parse range for heartbeat calculations
-            range_start_int = int(rs, 16)
-            range_end_int = int(re_, 16)
-            chunk_size = range_end_int - range_start_int + 1
+            completed_chunks = []
+            key_found = False
 
-            if self.ui:
-                self.ui.current_chunk = chunk_id
-                self.ui.assignment_id = assignment_id
-                self.ui.chunk_range_start = rs
-                self.ui.chunk_range_end = re_
-                self.ui.chunk_progress = 0.0
-                self.ui.current_speed = 0.0
-                self.ui.heartbeat_ok = False
+            for chunk in chunks:
+                if not self.running or self._user_state != "running":
+                    break
 
-            self._log(f"Assignment {assignment_id[:8]}... range {rs} -> {re_}", LBLUE)
+                assignment_id = chunk["assignment_id"]
+                chunk_id = chunk["chunk_id"]
+                rs = chunk["range_start"]
+                re_ = chunk["range_end"]
+                target = chunk["target"]
+                heartbeat_interval = chunk["heartbeat_interval"]
 
-            # Start heartbeat thread with per-assignment stop event
-            hb_stop = threading.Event()
-            hb_thread = threading.Thread(
-                target=self._heartbeat_loop,
-                args=(assignment_id, range_start_int, range_end_int, heartbeat_interval, hb_stop),
-                daemon=True,
-            )
-            hb_thread.start()
+                range_start_int = int(rs, 16)
+                range_end_int = int(re_, 16)
+                chunk_size = range_end_int - range_start_int + 1
 
-            # Run KeyHunt
-            result = self.runner.run(rs, re_, target, self.ui)
-
-            # Stop heartbeat — signal first, then join
-            hb_stop.set()
-            hb_thread.join(timeout=5)
-
-            if result["status"] == "found":
-                self._log("KEY FOUND! Reporting to pool...", GREEN)
                 if self.ui:
-                    self.ui.status = "KEY FOUND!"
+                    self.ui.status = "SCANNING"
                     self.ui.status_color = GREEN
-                try:
-                    self.api.post("/api/found", {
+                    self.ui.current_chunk = chunk_id
+                    self.ui.assignment_id = assignment_id
+                    self.ui.chunk_range_start = rs
+                    self.ui.chunk_range_end = re_
+                    self.ui.chunk_progress = 0.0
+                    self.ui.current_speed = 0.0
+                    self.ui.heartbeat_ok = False
+
+                self._log(f"Assignment {assignment_id[:8]}... chunk #{chunk_id:,} range {rs} -> {re_}", LBLUE)
+
+                # Start heartbeat thread with per-assignment stop event
+                hb_stop = threading.Event()
+                hb_thread = threading.Thread(
+                    target=self._heartbeat_loop,
+                    args=(assignment_id, range_start_int, range_end_int, heartbeat_interval, hb_stop),
+                    daemon=True,
+                )
+                hb_thread.start()
+
+                # Run KeyHunt
+                result = self.runner.run(rs, re_, target, self.ui)
+
+                # Stop heartbeat — signal first, then join
+                hb_stop.set()
+                hb_thread.join(timeout=5)
+
+                if result["status"] == "found":
+                    self._log("KEY FOUND! Reporting to pool...", GREEN)
+                    if self.ui:
+                        self.ui.status = "KEY FOUND!"
+                        self.ui.status_color = GREEN
+                    for _attempt in range(20):
+                        try:
+                            self.api.post("/api/found", {
+                                "chunk_id": chunk_id,
+                                "private_key": result["found_key"]["privkey"],
+                            })
+                            self._log("Key reported to pool!", GREEN)
+                            break
+                        except Exception as e:
+                            self._log(f"FAILED to report key (attempt {_attempt + 1}): {e}", RED)
+                            time.sleep(min(5 * (_attempt + 1), 60))
+                    self._post_complete_with_retry(assignment_id, rs, re_)
+                    key_found = True
+                    break
+
+                if result["status"] in ("complete", "timeout"):
+                    self._log(f"Assignment {assignment_id[:8]}... complete", GREEN)
+                    completed_chunks.append({
+                        "assignment_id": assignment_id,
                         "chunk_id": chunk_id,
-                        "private_key": result["found_key"]["privkey"],
-                    })
-                    self._log("Key reported to pool!", GREEN)
-                except Exception as e:
-                    self._log(f"FAILED to report key: {e}", RED)
-                try:
-                    self.api.post("/api/work/complete", {
-                        "assignment_id": assignment_id,
                         "range_start": rs,
                         "range_end": re_,
+                        "chunk_size": chunk_size,
                     })
-                except Exception:
-                    pass
-                continue
+                else:
+                    self._log(f"Assignment error: {result.get('error', result['status'])}", RED)
+                    if self.ui and self.ui.chunk_progress > 0:
+                        self._log(f"Partial progress: {self.ui.chunk_progress:.1f}%", YELLOW)
 
-            if result["status"] in ("complete", "timeout"):
-                self._log(f"Assignment {assignment_id[:8]}... complete", GREEN)
+                if self.ui:
+                    self.ui.current_chunk = None
+                    self.ui.current_speed = 0.0
+                    self.ui.chunk_progress = 0.0
+                    self.ui.heartbeat_ok = False
+
+            # Report all completed chunks (try batch endpoint first, then individual)
+            if completed_chunks and not key_found:
+                # Try batch report
+                batch_payload = {
+                    "results": [
+                        {"chunk_id": c["chunk_id"], "assignment_id": c["assignment_id"],
+                         "range_start": c["range_start"], "range_end": c["range_end"]}
+                        for c in completed_chunks
+                    ]
+                }
                 try:
-                    rpt = self.api.post("/api/work/complete", {
-                        "assignment_id": assignment_id,
-                        "range_start": rs,
-                        "range_end": re_,
-                    })
-                    if rpt.get("accepted"):
-                        if self.ui:
-                            self.ui.chunks_done += 1
-                            self.ui.chunks_accepted += 1
-                            self.ui.keys_scanned += chunk_size
-                        self._log("Accepted by pool", GREEN)
-                    else:
-                        self._log(f"Rejected: {rpt.get('detail', 'unknown')}", YELLOW)
+                    rpt = self.api.post("/api/work", batch_payload)
+                    ac, rj = rpt.get("accepted", 0), rpt.get("rejected", 0)
+                    if self.ui:
+                        self.ui.chunks_done += len(completed_chunks)
+                        self.ui.chunks_accepted += ac
+                        self.ui.chunks_rejected += rj
+                        for c in completed_chunks:
+                            self.ui.keys_scanned += c["chunk_size"]
+                    self._log(f"Batch reported: {ac} accepted, {rj} rejected", GREEN if rj == 0 else YELLOW)
                 except Exception as e:
-                    self._log(f"Report error: {e}", RED)
-            else:
-                self._log(f"Assignment error: {result.get('error', result['status'])}", RED)
-                if self.ui and self.ui.chunk_progress > 0:
-                    self._log(f"Partial progress: {self.ui.chunk_progress:.1f}%", YELLOW)
-
-            if self.ui:
-                self.ui.current_chunk = None
-                self.ui.current_speed = 0.0
-                self.ui.chunk_progress = 0.0
-                self.ui.heartbeat_ok = False
+                    self._log(f"Batch report failed ({e}), falling back to individual...", YELLOW)
+                    for c in completed_chunks:
+                        rpt = self._post_complete_with_retry(c["assignment_id"], c["range_start"], c["range_end"])
+                        if rpt and rpt.get("accepted"):
+                            if self.ui:
+                                self.ui.chunks_done += 1
+                                self.ui.chunks_accepted += 1
+                                self.ui.keys_scanned += c["chunk_size"]
+                            self._log(f"Chunk {c['chunk_id']} accepted", GREEN)
+                        elif rpt:
+                            if self.ui:
+                                self.ui.chunks_rejected += 1
+                            self._log(f"Chunk {c['chunk_id']} rejected: {rpt.get('detail', 'unknown')}", YELLOW)
 
             # Eco mode cooldown
-            if self.mode == "eco" and self._user_state == "running":
+            if self.mode == "eco" and self._user_state == "running" and not key_found:
                 self._log(f"Eco mode: cooling down {self.eco_cooldown}s...", CYAN)
                 if self.ui:
                     self.ui.status = "ECO COOLDOWN"
@@ -2216,7 +2271,7 @@ class PoolWorker:
                         break
                     time.sleep(1)
 
-            # Check pause after assignment
+            # Check pause after assignment batch
             while self._user_state == "paused":
                 if self.ui:
                     self.ui.status = "PAUSED"
