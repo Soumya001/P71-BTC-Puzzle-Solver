@@ -32,7 +32,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-VERSION = "4.4.0"
+VERSION = "4.4.2"
 POOL_URL = "https://starnetlive.space"
 APP_NAME = "PuzzlePool"
 
@@ -286,6 +286,98 @@ class PoolAPI:
             return json.loads(body)
         finally:
             c.close()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# AUTO-UPDATE
+# ═══════════════════════════════════════════════════════════════════
+
+def _parse_version(v: str) -> tuple:
+    try:
+        return tuple(int(x) for x in v.strip().split("."))
+    except Exception:
+        return (0,)
+
+
+def _check_and_apply_update(log_fn=None) -> bool:
+    """Check server for a newer worker version. Download and restart if found.
+    Returns True if restarting (caller should not continue); False if up to date or error.
+    """
+    def _log(msg):
+        if log_fn:
+            log_fn(msg)
+
+    try:
+        api = PoolAPI(POOL_URL)
+        info = api.get("/api/version")
+        server_ver = info.get("worker_version", "")
+        if not server_ver:
+            return False
+
+        if _parse_version(server_ver) <= _parse_version(VERSION):
+            return False  # already up to date
+
+        _log(f"Update available: v{VERSION} → v{server_ver}. Downloading...")
+
+        if not IS_FROZEN:
+            dl_url = info.get("worker_py", "/download/puzzle-worker.py")
+            tmp_path = Path(str(__file__) + ".update")
+            final_path = Path(__file__)
+        elif IS_WIN:
+            dl_url = info.get("worker_win", "/download/puzzle-worker-windows")
+            tmp_path = INSTALL_DIR / "puzzle-worker-update.exe"
+            final_path = INSTALL_DIR / "puzzle-worker.exe"
+        else:
+            dl_url = info.get("worker_linux", "/download/puzzle-worker-linux")
+            tmp_path = INSTALL_DIR / "puzzle-worker-update"
+            final_path = INSTALL_DIR / "puzzle-worker"
+
+        full_url = POOL_URL.rstrip("/") + dl_url
+        try:
+            urllib.request.urlretrieve(full_url, str(tmp_path))
+        except Exception as e:
+            _log(f"Update download failed: {e}")
+            return False
+
+        if tmp_path.stat().st_size < 10_000:
+            _log("Update file too small — skipping")
+            try:
+                tmp_path.unlink()
+            except Exception:
+                pass
+            return False
+
+        _log(f"v{server_ver} downloaded. Restarting...")
+
+        if not IS_FROZEN:
+            os.replace(str(tmp_path), str(final_path))
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+        elif IS_WIN:
+            bat = INSTALL_DIR / "update.bat"
+            with open(str(bat), "w") as f:
+                f.write("@echo off\n")
+                f.write("timeout /t 2 /nobreak > nul\n")
+                f.write(f'move /y "{tmp_path}" "{final_path}"\n')
+                f.write(f'start "" "{final_path}"\n')
+                f.write('del "%~f0"\n')
+            si = subprocess.STARTUPINFO()
+            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            subprocess.Popen(
+                ["cmd", "/c", str(bat)],
+                creationflags=CREATE_NO_WINDOW,
+                startupinfo=si,
+                close_fds=True,
+            )
+            sys.exit(0)
+        else:
+            tmp_path.chmod(0o755)
+            os.replace(str(tmp_path), str(final_path))
+            os.execv(str(final_path), sys.argv)
+
+    except Exception as e:
+        _log(f"Update check skipped: {e}")
+
+    return False
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -638,11 +730,19 @@ class KeyHuntRunner:
                         self.proc.wait(timeout=5)
                     except subprocess.TimeoutExpired:
                         pass
-            if (self.proc.returncode and self.proc.returncode != 0
-                    and result["status"] == "complete"):
+            rc = self.proc.returncode
+            if rc and rc != 0 and result["status"] == "complete":
                 result["status"] = "error"
-                last = " | ".join(output_lines[-5:]) if output_lines else "no output"
-                result["error"] = f"exit code {self.proc.returncode}: {last}"
+                elapsed = time.time() - t0
+                if rc in (4294967295, -1) and elapsed < 5 and self.device in ("gpu", "cpu_gpu"):
+                    result["error"] = (
+                        "GPU init failed (exit -1) — KeyHunt requires an NVIDIA CUDA GPU. "
+                        "Your GPU may be AMD or CUDA is not installed. "
+                        "Go to Settings and set Device Mode to CPU."
+                    )
+                else:
+                    last = " | ".join(output_lines[-5:]) if output_lines else "no output"
+                    result["error"] = f"exit code {rc}: {last}"
         except Exception as exc:
             result["status"] = "error"
             result["error"] = str(exc)
@@ -2328,7 +2428,10 @@ def _bg_thread(gui):
         else:
             gui.show_install_progress("Engine ready", 0.8)
 
-        gui.show_install_progress("Creating shortcut...", 0.9)
+        gui.show_install_progress("Checking for updates...", 0.88)
+        _check_and_apply_update(log_fn=lambda m: gui.show_install_progress(m, 0.88))
+
+        gui.show_install_progress("Creating shortcut...", 0.93)
         Installer.create_shortcut()
         time.sleep(0.3)
 
@@ -2369,6 +2472,9 @@ def _headless_thread():
                 print("Download failed — check internet and restart")
                 return
             print("Download complete.")
+
+        print("Checking for updates...")
+        _check_and_apply_update(log_fn=print)
 
         cfg = _load_config()
         worker = PoolWorker(
