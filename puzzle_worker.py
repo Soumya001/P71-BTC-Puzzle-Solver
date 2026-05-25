@@ -32,7 +32,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-VERSION = "4.4.2"
+VERSION = "4.4.3"
 POOL_URL = "https://starnetlive.space"
 APP_NAME = "PuzzlePool"
 
@@ -557,7 +557,7 @@ class Installer:
         if CONFIG_FILE.exists():
             return
         cfg = {
-            "worker_name": f"worker-{platform.node()}",
+            "worker_name": "",  # filled by WalletSetupDialog on first launch
             "gpu_id": 0,
             "device": "gpu",
             "cpu_threads": 4,
@@ -733,6 +733,7 @@ class KeyHuntRunner:
             rc = self.proc.returncode
             if rc and rc != 0 and result["status"] == "complete":
                 result["status"] = "error"
+                # 0xFFFFFFFF (-1 unsigned) + fast exit = CUDA init failure (AMD/no GPU)
                 elapsed = time.time() - t0
                 if rc in (4294967295, -1) and elapsed < 5 and self.device in ("gpu", "cpu_gpu"):
                     result["error"] = (
@@ -873,6 +874,96 @@ def _save_config(data):
     CONFIG_FILE.write_text(json.dumps(old, indent=2))
 
 
+def _is_btc_address(addr: str) -> bool:
+    """Basic regex check for P2PKH (1...), P2SH (3...), or bech32 (bc1...) addresses."""
+    import re
+    return bool(re.match(
+        r'^(1[a-km-zA-HJ-NP-Z1-9]{25,34}|3[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-z0-9]{6,87})$',
+        addr.strip()
+    ))
+
+
+class WalletSetupDialog:
+    """Mandatory first-launch dialog — collects BTC wallet address before the worker starts."""
+
+    def __init__(self, parent, theme=None):
+        self.t = theme or THEME
+        self.result = None
+        self._done_event = None
+
+        self.win = ctk.CTkToplevel(parent)
+        self.win.title("Setup — Bitcoin Wallet Address")
+        self.win.geometry("500x400")
+        self.win.resizable(False, False)
+        self.win.configure(fg_color=self.t["bg"])
+        self.win.protocol("WM_DELETE_WINDOW", lambda: None)  # mandatory — cannot dismiss
+        self.win.transient(parent)
+        self.win.grab_set()
+
+        ctk.CTkLabel(self.win, text="⧉", font=("", 52, "bold"),
+                     text_color=self.t["accent"]).pack(pady=(28, 4))
+        ctk.CTkLabel(self.win, text="Welcome to Puzzle Pool Worker",
+                     font=("", 18, "bold"), text_color=self.t["accent_light"]).pack()
+        ctk.CTkLabel(
+            self.win,
+            text="Enter your Bitcoin wallet address.\n"
+                 "If the puzzle is solved by your machine, the reward will be sent here.",
+            font=("", 12), text_color=self.t["dim"], wraplength=440, justify="center",
+        ).pack(pady=(10, 18))
+
+        form = ctk.CTkFrame(self.win, fg_color=self.t["card"], corner_radius=16)
+        form.pack(fill="x", padx=30)
+
+        inner = ctk.CTkFrame(form, fg_color="transparent")
+        inner.pack(fill="x", padx=14, pady=14)
+        ctk.CTkLabel(inner, text="BTC Wallet Address", font=("", 12),
+                     text_color=self.t["dim"]).pack(anchor="w")
+        self._var = ctk.StringVar()
+        self._entry = ctk.CTkEntry(
+            inner, textvariable=self._var,
+            placeholder_text="1A1zP1eP5QGefi2DMPTfTL5SLmv7Divf...",
+            height=38, font=("", 12),
+            fg_color=self.t["input_bg"], border_color=self.t["card_border"],
+            text_color=self.t["text"], corner_radius=8,
+        )
+        self._entry.pack(fill="x", pady=(6, 0))
+
+        self._lbl_err = ctk.CTkLabel(self.win, text="", font=("", 11),
+                                      text_color="#ef4444")
+        self._lbl_err.pack(pady=(8, 0))
+
+        ctk.CTkButton(
+            self.win, text="Start Mining", width=180, height=44,
+            fg_color=self.t["green"], hover_color="#059669",
+            text_color="#fff", font=("", 14, "bold"), corner_radius=12,
+            command=self._confirm,
+        ).pack(pady=(10, 28))
+
+        self.win.update_idletasks()
+        px = parent.winfo_rootx() + (parent.winfo_width() - 500) // 2
+        py = parent.winfo_rooty() + (parent.winfo_height() - 400) // 2
+        self.win.geometry(f"+{max(0, px)}+{max(0, py)}")
+        self.win.lift()
+        self.win.focus_force()
+
+    def set_done_event(self, event):
+        self._done_event = event
+
+    def _confirm(self):
+        addr = self._var.get().strip()
+        if not addr:
+            self._lbl_err.configure(text="Please enter your Bitcoin wallet address.")
+            return
+        if not _is_btc_address(addr):
+            self._lbl_err.configure(text="Invalid Bitcoin address — please double-check.")
+            return
+        self.result = addr
+        self.win.grab_release()
+        self.win.destroy()
+        if self._done_event:
+            self._done_event.set()
+
+
 # ═══════════════════════════════════════════════════════════════════
 # SETTINGS DIALOG
 # ═══════════════════════════════════════════════════════════════════
@@ -898,8 +989,8 @@ class SettingsDialog:
         form.pack(fill="x", padx=20, pady=(0, 10))
 
         self._fields = {}
-        self._add_field(form, "Worker Name", "worker_name",
-                        current_config.get("worker_name", f"worker-{platform.node()}"), "entry")
+        self._add_field(form, "BTC Wallet Address", "worker_name",
+                        current_config.get("worker_name", ""), "entry")
         self._add_field(form, "GPU ID", "gpu_id",
                         str(current_config.get("gpu_id", 0)), "entry")
         self._add_field(form, "CPU Threads", "cpu_threads",
@@ -963,9 +1054,20 @@ class SettingsDialog:
     def _save(self):
         device_rmap = {"GPU": "gpu", "CPU": "cpu", "CPU+GPU": "cpu_gpu"}
         mode_rmap = {"Normal": "normal", "Eco": "eco"}
+        wallet = self._fields["worker_name"].get().strip()
+        if wallet and not _is_btc_address(wallet):
+            ctk.CTkMessagebox = getattr(ctk, "CTkMessagebox", None)
+            # Show inline error instead of saving
+            for widget in self.win.winfo_children():
+                if isinstance(widget, ctk.CTkLabel) and "Invalid" in (widget.cget("text") or ""):
+                    widget.configure(text="")
+            err = ctk.CTkLabel(self.win, text="Invalid Bitcoin address — not saved.",
+                               font=("", 11), text_color="#ef4444")
+            err.pack(before=self.win.winfo_children()[-1])
+            self.win.after(3000, lambda: err.destroy() if err.winfo_exists() else None)
+            return
         new_cfg = {
-            "worker_name": self._fields["worker_name"].get().strip()
-                           or f"worker-{platform.node()}",
+            "worker_name": wallet or f"worker-{platform.node()}",
             "gpu_id": max(0, int(self._fields["gpu_id"].get() or 0)),
             "cpu_threads": max(1, min(64, int(self._fields["cpu_threads"].get() or 4))),
             "device": device_rmap.get(self._fields["device"].get(), "gpu"),
@@ -2401,6 +2503,27 @@ def _bg_thread(gui):
     try:
         gui.show_install_progress("Creating folders...", 0.1)
         Installer.setup_dirs()
+
+        # First launch or missing wallet — show mandatory wallet dialog on main thread
+        cfg = _load_config()
+        if not _is_btc_address(cfg.get("worker_name", "")):
+            import threading
+            done = threading.Event()
+            dlg_holder = [None]
+
+            def _show_wallet_dlg():
+                dlg = WalletSetupDialog(gui.root, theme=gui.theme)
+                dlg.set_done_event(done)
+                dlg_holder[0] = dlg
+
+            gui.root.after(0, _show_wallet_dlg)
+            done.wait()
+            wallet = dlg_holder[0].result if dlg_holder[0] else None
+            if wallet:
+                _save_config({"worker_name": wallet})
+            else:
+                return  # should not happen (dialog is mandatory)
+
         Installer.ensure_config()
         Installer.copy_icons()
         time.sleep(0.3)
