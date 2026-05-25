@@ -150,30 +150,22 @@ jobs:
             - **Linux**: `puzzle-worker-linux` — `chmod +x puzzle-worker-linux && ./puzzle-worker-linux`
             - **macOS**: `puzzle-worker-macos` — `chmod +x puzzle-worker-macos && ./puzzle-worker-macos`
 
-            ### What's New in v4.2.2
-            - **AMOLED Hacker UI** — true black background with neon cyan/green/purple accents
-            - **Ghost buttons** — outline-style Start/Pause/Stop with hover-fill effects
-            - **3-section header** — logo left, live status center, settings right
-            - **Glow-bordered cards** — neon accent on controls bar and current scan
-            - **Real-time CUDA speed** — PTY-based reader for instant KeyHunt progress
-            - **Tray icon fix** — prefers puzzle logo over generated fallback
-
-            ### Features
-            - Start / Pause / Stop controls
-            - Normal & Eco scan modes
+            ### What's New in ${{ github.ref_name }}
+            - **Auto-update**: worker checks for a new version on every startup and updates itself automatically
+            - **AMD GPU detection**: clear error message if CUDA is unavailable — "Switch to CPU in Settings"
+            - Start / Pause / Stop controls, Normal & Eco scan modes
             - GPU / CPU / CPU+GPU device selection
-            - Settings panel for all configuration
-            - System tray — close window to keep mining in background
+            - System tray — close window to keep running in background
             - Auto-reconnect on connection loss
 
-            ### What happens
-            1. Creates `C:\PuzzlePool` folder (Windows) or `~/.puzzle-pool` (Linux/macOS)
-            2. Auto-downloads the scanning engine (one time)
+            ### First run
+            1. Creates `C:\PuzzlePool` (Windows) or `~/.puzzle-pool` (Linux/macOS)
+            2. Downloads the scanning engine once
             3. Creates a desktop shortcut
-            4. Connects to the pool — press Start to begin scanning
+            4. Connects to the pool — press Start
 
             ### Requirements
-            - NVIDIA GPU with CUDA drivers (for GPU mode)
-            - CPU-only mode available if no NVIDIA GPU
+            - NVIDIA GPU with CUDA drivers recommended (for GPU mode)
+            - CPU-only mode works on any machine including AMD GPUs
 
             Dashboard: https://starnetlive.space
